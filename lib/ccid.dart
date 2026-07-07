@@ -70,6 +70,10 @@ class CcidCard {
   /// at page 3 of an NFC Forum Type 2 Tag's memory.
   Future<CapabilityContainer> readCapabilityContainer() async {
     final bytes = await _transceiveChecked('FFB0000304');
+    if (bytes.length != 4) {
+      throw Exception(
+          'Failed to read Capability Container (expected 4 bytes, got ${bytes.length})');
+    }
     return CapabilityContainer.parse(bytes);
   }
 
@@ -92,17 +96,16 @@ class CcidCard {
   /// command fails, or the response isn't the expected 8 bytes, rather
   /// than throwing.
   Future<ChipVersion?> readChipVersion() async {
-    String? responseHex;
     try {
-      responseHex = await transceive('FF0000000160');
+      final responseHex = await transceive('FF0000000160');
+      final data = _stripAndCheckSw(responseHex);
+      if (data == null || data.length != 8) {
+        return null;
+      }
+      return ChipVersion.parse(data);
     } catch (_) {
       return null;
     }
-    final data = _stripAndCheckSw(responseHex);
-    if (data == null || data.length != 8) {
-      return null;
-    }
-    return ChipVersion.parse(data);
   }
 
   Future<Uint8List> _readPagesFrom(int startPage, {int? maxBytes}) async {
