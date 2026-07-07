@@ -55,7 +55,7 @@ class CcidCard {
 
     final buffer = BytesBuilder();
     var page = 4;
-    while (buffer.length < dataAreaSize) {
+    while (buffer.length < dataAreaSize && page <= 0xFF) {
       final pageHex = page.toRadixString(16).padLeft(2, '0');
       String? chunkHex;
       try {

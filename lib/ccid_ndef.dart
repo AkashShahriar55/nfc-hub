@@ -79,9 +79,28 @@ class NdefRecord {
     final textStart = 1 + languageCodeLength;
     if (textStart > payload.length) return null;
     final textBytes = payload.sublist(textStart);
-    return isUtf16
-        ? String.fromCharCodes(textBytes)
-        : utf8.decode(textBytes, allowMalformed: true);
+    if (!isUtf16) {
+      return utf8.decode(textBytes, allowMalformed: true);
+    }
+    return _decodeUtf16(textBytes);
+  }
+
+  static String _decodeUtf16(Uint8List bytes) {
+    var start = 0;
+    var bigEndian = true;
+    if (bytes.length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF) {
+      start = 2;
+    } else if (bytes.length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE) {
+      bigEndian = false;
+      start = 2;
+    }
+    final codeUnits = <int>[];
+    for (var i = start; i + 1 < bytes.length; i += 2) {
+      codeUnits.add(bigEndian
+          ? (bytes[i] << 8) | bytes[i + 1]
+          : (bytes[i + 1] << 8) | bytes[i]);
+    }
+    return String.fromCharCodes(codeUnits);
   }
 
   /// Decodes this record as an NFC Forum well-known URI record ('U').
@@ -147,6 +166,10 @@ Uint8List? parseTlvForNdefMessage(Uint8List data) {
 
 /// Parses a raw NDEF message (the value of an NDEF Message TLV) into a
 /// list of [NdefRecord]s.
+///
+/// Chunked records (the `CF` flag) are not supported — each physical
+/// record in the message is returned as its own [NdefRecord] without
+/// reassembling chunked payloads.
 List<NdefRecord> parseNdefRecords(Uint8List message) {
   final records = <NdefRecord>[];
   var i = 0;

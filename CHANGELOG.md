@@ -1,3 +1,7 @@
+## 0.1.9
+
+* Add NDEF read support for Type 2 tags (NTAG213/215/216, Mifare Ultralight) via `CcidCard.readNdef()`
+
 ## 0.1.8
 
 * Improve compatibility
