@@ -115,7 +115,7 @@ class CcidCard {
       final pageHex = page.toRadixString(16).padLeft(2, '0');
       String? chunkHex;
       try {
-        chunkHex = await transceive('FFB00000${pageHex}10');
+        chunkHex = await transceive('FFB000${pageHex}10');
       } catch (_) {
         break;
       }
