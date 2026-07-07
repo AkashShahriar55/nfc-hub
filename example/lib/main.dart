@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:ccid/ccid.dart';
 
+import 'tag_details_page.dart';
+
 void main() {
   runApp(const MyApp());
 }
@@ -69,23 +71,13 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
-  Future<void> _readNfcTag() async {
+  void _readTagDetails() {
     if (_card == null) return;
-    try {
-      final records = await _card!.readNdef();
-      setState(() {
-        _history.insert(
-          0,
-          records.isEmpty
-              ? 'NDEF: (empty message)'
-              : 'NDEF: ${records.join(', ')}',
-        );
-      });
-    } catch (e) {
-      setState(() {
-        _history.insert(0, 'NDEF read failed: $e');
-      });
-    }
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => TagDetailsPage(card: _card!),
+      ),
+    );
   }
 
   @override
@@ -130,8 +122,8 @@ class _MyHomePageState extends State<MyHomePage> {
                 ),
                 const SizedBox(width: 16),
                 ElevatedButton(
-                  onPressed: _readNfcTag,
-                  child: const Text('Read NFC Tag'),
+                  onPressed: _readTagDetails,
+                  child: const Text('Read Tag Details'),
                 ),
               ],
             ),
