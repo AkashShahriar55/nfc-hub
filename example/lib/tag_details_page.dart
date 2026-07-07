@@ -20,18 +20,24 @@ class _TagDetailsPageState extends State<TagDetailsPage> {
   @override
   void initState() {
     super.initState();
-    _loadUid();
-    _loadCapabilityContainer();
-    _loadNdef();
-    _loadMemoryDump();
-    _loadChipVersion();
+    _loadAll();
+  }
+
+  Future<void> _loadAll() async {
+    await _loadUid();
+    await _loadCapabilityContainer();
+    await _loadNdef();
+    await _loadMemoryDump();
+    await _loadChipVersion();
   }
 
   Future<void> _loadUid() async {
     try {
       final uid = await widget.card.readUid();
+      if (!mounted) return;
       setState(() => _uidResult = _hex(uid));
     } catch (e) {
+      if (!mounted) return;
       setState(() => _uidResult = 'Failed: $e');
     }
   }
@@ -39,8 +45,10 @@ class _TagDetailsPageState extends State<TagDetailsPage> {
   Future<void> _loadCapabilityContainer() async {
     try {
       final cc = await widget.card.readCapabilityContainer();
+      if (!mounted) return;
       setState(() => _capabilityContainerResult = cc.toString());
     } catch (e) {
+      if (!mounted) return;
       setState(() => _capabilityContainerResult = 'Failed: $e');
     }
   }
@@ -48,11 +56,13 @@ class _TagDetailsPageState extends State<TagDetailsPage> {
   Future<void> _loadNdef() async {
     try {
       final records = await widget.card.readNdef();
+      if (!mounted) return;
       setState(() {
         _ndefResult =
             records.isEmpty ? '(empty message)' : records.join('\n');
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() => _ndefResult = 'Failed: $e');
     }
   }
@@ -60,8 +70,10 @@ class _TagDetailsPageState extends State<TagDetailsPage> {
   Future<void> _loadMemoryDump() async {
     try {
       final dump = await widget.card.readMemoryDump();
+      if (!mounted) return;
       setState(() => _memoryDumpResult = _formatPages(dump));
     } catch (e) {
+      if (!mounted) return;
       setState(() => _memoryDumpResult = 'Failed: $e');
     }
   }
@@ -69,12 +81,14 @@ class _TagDetailsPageState extends State<TagDetailsPage> {
   Future<void> _loadChipVersion() async {
     try {
       final version = await widget.card.readChipVersion();
+      if (!mounted) return;
       setState(() {
         _chipVersionResult = version == null
             ? 'Unavailable (reader/tag does not support GET_VERSION)'
             : version.toString();
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() => _chipVersionResult = 'Failed: $e');
     }
   }

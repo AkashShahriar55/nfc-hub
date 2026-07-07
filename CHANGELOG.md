@@ -1,3 +1,8 @@
+## 0.1.10
+
+* Add `CcidCard.readUid()`, `readCapabilityContainer()`, `readMemoryDump()`, and best-effort `readChipVersion()` for Type 2 tags (NTAG213/215/216, Mifare Ultralight)
+* Fix a malformed READ BINARY APDU that affected multi-page reads in `readNdef()` and `readMemoryDump()`
+
 ## 0.1.9
 
 * Add NDEF read support for Type 2 tags (NTAG213/215/216, Mifare Ultralight) via `CcidCard.readNdef()`
