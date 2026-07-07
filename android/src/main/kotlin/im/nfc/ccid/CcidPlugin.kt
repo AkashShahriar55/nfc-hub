@@ -97,8 +97,12 @@ class CcidPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                     result.error("CCID_READER_NOT_CONNECTED", "Reader not connected", null)
                     return
                 }
-                val resp = ccid.xfrBlock(capdu.hexToByteArray())
-                result.success(resp.toHexString())
+                try {
+                    val resp = ccid.xfrBlock(capdu.hexToByteArray())
+                    result.success(resp.toHexString())
+                } catch (e: CcidException) {
+                    result.error("CCID_TRANSCEIVE_ERROR", e.message, null)
+                }
             }
 
             "disconnect" -> {
@@ -226,20 +230,25 @@ class CcidPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             Log.e(TAG, "Failed to open device")
             return null
         }
-        val endpoints = getEndpoints(usbInterface)
-        val ccid = Ccid(usbConnection, endpoints.first, endpoints.second)
-        val descriptor = ccid.getDescriptor(interfaceIdx)
-        if (descriptor?.supportsProtocol(Protocol.T1) != true) {
-            Log.d(TAG, "Unsupported protocol")
-            return null
+        return try {
+            val endpoints = getEndpoints(usbInterface)
+            val ccid = Ccid(usbConnection, endpoints.first, endpoints.second)
+            val descriptor = ccid.getDescriptor(interfaceIdx)
+            if (descriptor?.supportsProtocol(Protocol.T1) != true) {
+                Log.d(TAG, "Unsupported protocol")
+                return null
+            }
+            if (!usbConnection.claimInterface(usbInterface, true)) {
+                Log.e(TAG, "Failed to claim interface")
+                return null
+            }
+            val atr = ccid.iccPowerOn()
+            Log.d(TAG, "ATR: ${atr.toHexString()}")
+            ccid
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to connect to interface: ${e.message}")
+            null
         }
-        if (!usbConnection.claimInterface(usbInterface, true)) {
-            Log.e(TAG, "Failed to claim interface")
-            return null
-        }
-        val atr = ccid.iccPowerOn()
-        Log.d(TAG, "ATR: ${atr.toHexString()}")
-        return ccid
     }
 
     private fun getEndpoints(usbInterface: UsbInterface): Pair<UsbEndpoint, UsbEndpoint> {
