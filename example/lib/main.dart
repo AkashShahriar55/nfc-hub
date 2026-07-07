@@ -69,6 +69,25 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
+  Future<void> _readNfcTag() async {
+    if (_card == null) return;
+    try {
+      final records = await _card!.readNdef();
+      setState(() {
+        _history.insert(
+          0,
+          records.isEmpty
+              ? 'NDEF: (empty message)'
+              : 'NDEF: ${records.join(', ')}',
+        );
+      });
+    } catch (e) {
+      setState(() {
+        _history.insert(0, 'NDEF read failed: $e');
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -108,6 +127,11 @@ class _MyHomePageState extends State<MyHomePage> {
                 ElevatedButton(
                   onPressed: _connectCard,
                   child: const Text('Connect'),
+                ),
+                const SizedBox(width: 16),
+                ElevatedButton(
+                  onPressed: _readNfcTag,
+                  child: const Text('Read NFC Tag'),
                 ),
               ],
             ),
