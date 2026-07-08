@@ -7,6 +7,7 @@ export 'ccid_iso_dep.dart' show IsoDepTag;
 export 'ccid_mifare_classic.dart'
     show MifareClassicTag, MifareKeyType, MifareAuthException;
 export 'ccid_ndef.dart' show NdefRecord;
+export 'ccid_tag_detection.dart' show identifyTag;
 export 'ccid_tag_driver.dart' show TagDriver, UnrecognizedTagException;
 export 'ccid_tag_info.dart' show CapabilityContainer, ChipVersion;
 export 'ccid_type2.dart' show Type2Tag;
