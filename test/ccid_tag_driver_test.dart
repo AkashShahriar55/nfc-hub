@@ -1,5 +1,4 @@
 import 'package:ccid/ccid.dart';
-import 'package:ccid/ccid_tag_driver.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class _TestDriver extends TagDriver {

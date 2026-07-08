@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import 'package:convert/convert.dart';
+
 import 'ccid.dart' show CcidCard;
 import 'ccid_felica.dart';
 import 'ccid_iso_dep.dart';
@@ -15,14 +17,17 @@ import 'src/apdu.dart';
 /// markers for contactless storage cards). Where [CcidCard.atr] is null or
 /// doesn't match a known pattern, falls back to ordered capability probing.
 ///
-/// Throws [UnrecognizedTagException] if no known tag family matches.
+/// Throws [UnrecognizedTagException] if no known tag family matches. The
+/// exception's message includes the ATR (if any) and the outcome of every
+/// probe that was tried, so a caller displaying `toString()` on-screen has
+/// enough to diagnose a detection failure without separate log access.
 Future<TagDriver> identifyTag(CcidCard card) async {
   final atr = card.atr;
   if (atr != null) {
     final fromAtr = _identifyFromAtr(card, atr);
     if (fromAtr != null) return fromAtr;
   }
-  return _identifyByProbing(card);
+  return _identifyByProbing(card, atr);
 }
 
 TagDriver? _identifyFromAtr(CcidCard card, Uint8List atr) {
@@ -98,19 +103,32 @@ Future<String?> _tryTransceive(CcidCard card, String capdu) async {
   }
 }
 
-Future<TagDriver> _identifyByProbing(CcidCard card) async {
+/// Tries every known tag family's probe in turn and returns the first
+/// match. Every probe's outcome is recorded in [log] regardless of whether
+/// it matched, so that if nothing matches, [UnrecognizedTagException] can
+/// report exactly what was tried and what each probe returned.
+///
+/// No single probe gates the others: a card not answering the Get UID
+/// pseudo-APDU (built for ISO14443-A) doesn't stop the MIFARE or FeliCa
+/// probes from running, since FeliCa in particular is a different RF
+/// technology (NFC-F) that isn't expected to answer it.
+Future<TagDriver> _identifyByProbing(CcidCard card, Uint8List? atr) async {
+  final log = <String>[
+    atr == null ? 'atr=none' : 'atr=${hex.encode(atr)} (no known pattern)',
+  ];
+
   final uidResponse = await _tryTransceive(card, 'FFCA000000');
-  if (stripAndCheckSw(uidResponse) == null) {
-    throw const UnrecognizedTagException('Card did not respond to Get UID');
-  }
+  log.add('Get UID -> ${uidResponse ?? 'no response'}');
 
   final ccResponse = await _tryTransceive(card, 'FFB0000304');
   final ccData = stripAndCheckSw(ccResponse);
+  log.add('Read CC -> ${ccResponse ?? 'no response'}');
   if (ccData != null && ccData.length == 4 && ccData[0] == 0xE1) {
     return Type2Tag(card);
   }
 
   final selectResponse = await _tryTransceive(card, '00A4040000');
+  log.add('SELECT -> ${selectResponse ?? 'no response'}');
   if (selectResponse != null && selectResponse.length >= 4) {
     return IsoDepTag(card);
   }
@@ -119,20 +137,21 @@ Future<TagDriver> _identifyByProbing(CcidCard card) async {
   try {
     await mifare.authenticateWithDefaultKeys(0);
     return mifare;
-  } catch (_) {
-    // fall through
+  } catch (e) {
+    log.add('MIFARE default-key auth -> failed: $e');
   }
 
   final felica = FelicaTag(card);
   try {
-    await felica.idm;
+    final idm = await felica.idm;
+    log.add('FeliCa poll -> succeeded, idm=${hex.encode(idm)}');
     return felica;
-  } catch (_) {
-    // fall through
+  } catch (e) {
+    log.add('FeliCa poll -> failed: $e');
   }
 
-  throw const UnrecognizedTagException(
+  throw UnrecognizedTagException(
     'Card did not match any known tag family (Type 2, MIFARE Classic, '
-    'FeliCa, or ISO-DEP)',
+    'FeliCa, or ISO-DEP). ${log.join('; ')}',
   );
 }

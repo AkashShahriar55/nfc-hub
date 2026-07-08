@@ -83,8 +83,15 @@ class _MyHomePageState extends State<MyHomePage> {
       );
     } catch (e) {
       if (!mounted) return;
+      // Detection failures include the ATR and every probe's outcome in
+      // their message (see identifyTag()'s doc comment), so a long
+      // duration here is deliberate: it gives time to read or screenshot
+      // the diagnostic without needing a connected debugger/console.
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not identify tag: $e')),
+        SnackBar(
+          content: Text('Could not identify tag: $e'),
+          duration: const Duration(seconds: 30),
+        ),
       );
     }
   }

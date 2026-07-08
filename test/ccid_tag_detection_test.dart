@@ -132,5 +132,37 @@ void main() {
         throwsA(isA<UnrecognizedTagException>()),
       );
     });
+
+    test(
+        'recognizes a FeliCa card via polling even when Get UID fails '
+        '(regression test: Get UID must not gate the other probes, since '
+        "it's an ISO14443-A command and FeliCa is a different RF "
+        'technology)', () async {
+      CcidPlatform.instance = _FakeCcidPlatform({
+        'FFCA000000': null,
+        'FF000000060600FFFF0000': '0A01AABBCCDDEE0011229000',
+      });
+      final card = CcidCard('fake-reader');
+
+      final driver = await identifyTag(card);
+
+      expect(driver, isA<FelicaTag>());
+    });
+
+    test(
+        "UnrecognizedTagException's message includes the ATR status and "
+        'every probe outcome, so it is diagnosable from an on-screen error '
+        'alone', () async {
+      CcidPlatform.instance = _FakeCcidPlatform({'FFCA000000': null});
+      final card = CcidCard('fake-reader');
+
+      try {
+        await identifyTag(card);
+        fail('expected identifyTag() to throw');
+      } on UnrecognizedTagException catch (e) {
+        expect(e.message, contains('atr=none'));
+        expect(e.message, contains('Get UID'));
+      }
+    });
   });
 }
