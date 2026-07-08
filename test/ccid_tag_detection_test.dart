@@ -34,8 +34,15 @@ void main() {
 
   group('identifyTag() via ATR', () {
     test('recognizes a Type 2 Tag ATR', () async {
-      final atr = Uint8List.fromList(
-          [0x3B, 0x8F, 0x80, 0x01, 0x80, 0x4F, 0x0C, 0x03, 0x00, 0x00]);
+      // Real NTAG213/Ultralight-shaped historical bytes: shared RID
+      // A0 00 00 03 06 followed by standard byte 0x03 (ISO14443A storage
+      // family) and card-name byte 0x03 (Type 2/Ultralight). Under the old
+      // RID-presence-only check this ATR would have wrongly resolved to
+      // MifareClassicTag, since the shared RID alone used to trigger it.
+      final atr = Uint8List.fromList([
+        0x3B, 0x8F, 0x80, 0x01, //
+        0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0x00, 0x03,
+      ]);
       final card = CcidCard('fake-reader', atr: atr);
 
       final driver = await identifyTag(card);
@@ -43,7 +50,7 @@ void main() {
       expect(driver, isA<Type2Tag>());
     });
 
-    test('recognizes a MIFARE Classic ATR by its RID marker', () async {
+    test('recognizes a MIFARE Classic 1K ATR by its RID marker', () async {
       final atr = Uint8List.fromList([
         0x3B, 0x8F, 0x80, 0x01, //
         0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0x00, 0x01,
@@ -55,9 +62,23 @@ void main() {
       expect(driver, isA<MifareClassicTag>());
     });
 
+    test('recognizes a MIFARE Classic 4K ATR by its RID marker', () async {
+      final atr = Uint8List.fromList([
+        0x3B, 0x8F, 0x80, 0x01, //
+        0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0x00, 0x02,
+      ]);
+      final card = CcidCard('fake-reader', atr: atr);
+
+      final driver = await identifyTag(card);
+
+      expect(driver, isA<MifareClassicTag>());
+    });
+
     test('recognizes a FeliCa ATR', () async {
-      final atr = Uint8List.fromList(
-          [0x3B, 0x8F, 0x80, 0x01, 0x80, 0x4F, 0x0C, 0x11, 0x00, 0x00]);
+      final atr = Uint8List.fromList([
+        0x3B, 0x8F, 0x80, 0x01, //
+        0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x11, 0x00, 0x3B,
+      ]);
       final card = CcidCard('fake-reader', atr: atr);
 
       final driver = await identifyTag(card);

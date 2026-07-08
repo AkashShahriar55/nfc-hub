@@ -29,9 +29,40 @@ TagDriver? _identifyFromAtr(CcidCard card, Uint8List atr) {
   if (atr.length < 5) return null;
   final historicalBytes = atr.sublist(4);
 
-  if (_contains(historicalBytes, [0xA0, 0x00, 0x00, 0x03, 0x06])) {
-    return MifareClassicTag(card);
+  // The PC/SC Part 3 RID A0 00 00 03 06 is shared by every contactless
+  // storage card family (MIFARE Classic, Type 2/Ultralight, and FeliCa all
+  // carry it). The byte immediately following the RID ("standard") and, for
+  // the ISO14443A storage family, the byte two positions after that ("card
+  // name") are what actually discriminate between the families:
+  //   standard 0x11                         -> FeliCa
+  //   standard 0x03, card name 0x01 or 0x02 -> MIFARE Classic (1K/4K)
+  //   standard 0x03, card name 0x03         -> Type 2 (NTAG/Ultralight)
+  final ridIndex = _indexOf(historicalBytes, [0xA0, 0x00, 0x00, 0x03, 0x06]);
+  if (ridIndex != null) {
+    final standardIndex = ridIndex + 5;
+    if (standardIndex < historicalBytes.length) {
+      final standard = historicalBytes[standardIndex];
+      if (standard == 0x11) {
+        return FelicaTag(card);
+      }
+      if (standard == 0x03) {
+        final cardNameIndex = standardIndex + 2;
+        if (cardNameIndex < historicalBytes.length) {
+          final cardName = historicalBytes[cardNameIndex];
+          if (cardName == 0x01 || cardName == 0x02) {
+            return MifareClassicTag(card);
+          }
+          if (cardName == 0x03) {
+            return Type2Tag(card);
+          }
+        }
+      }
+    }
   }
+
+  // Weaker fallback heuristics, used only when the RID-based discrimination
+  // above didn't produce a match (RID absent entirely, or its trailing
+  // bytes were missing/unrecognized).
   if (historicalBytes.contains(0x11)) {
     return FelicaTag(card);
   }
@@ -43,7 +74,9 @@ TagDriver? _identifyFromAtr(CcidCard card, Uint8List atr) {
   return IsoDepTag(card);
 }
 
-bool _contains(Uint8List haystack, List<int> needle) {
+/// Returns the index at which [needle] first occurs in [haystack], or null
+/// if it doesn't occur at all.
+int? _indexOf(Uint8List haystack, List<int> needle) {
   for (var i = 0; i + needle.length <= haystack.length; i++) {
     var matches = true;
     for (var j = 0; j < needle.length; j++) {
@@ -52,9 +85,9 @@ bool _contains(Uint8List haystack, List<int> needle) {
         break;
       }
     }
-    if (matches) return true;
+    if (matches) return i;
   }
-  return false;
+  return null;
 }
 
 Future<String?> _tryTransceive(CcidCard card, String capdu) async {
