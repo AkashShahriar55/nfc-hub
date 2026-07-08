@@ -2,6 +2,8 @@ import 'dart:typed_data';
 
 import 'ccid_platform_interface.dart';
 
+export 'ccid_mifare_classic.dart'
+    show MifareClassicTag, MifareKeyType, MifareAuthException;
 export 'ccid_ndef.dart' show NdefRecord;
 export 'ccid_tag_driver.dart' show TagDriver, UnrecognizedTagException;
 export 'ccid_tag_info.dart' show CapabilityContainer, ChipVersion;
