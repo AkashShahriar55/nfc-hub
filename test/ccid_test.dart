@@ -57,7 +57,7 @@ void main() {
     CcidPlatform.instance = fake;
 
     final card = CcidCard('fake-reader');
-    final records = await card.readNdef();
+    final records = await Type2Tag(card).readNdef();
 
     expect(records, hasLength(1));
     expect(records[0].asText, equals('hello'));
