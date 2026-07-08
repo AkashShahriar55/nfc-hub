@@ -34,33 +34,34 @@ TagDriver? _identifyFromAtr(CcidCard card, Uint8List atr) {
   if (atr.length < 5) return null;
   final historicalBytes = atr.sublist(4);
 
-  // The PC/SC Part 3 RID A0 00 00 03 06 is shared by every contactless
-  // storage card family (MIFARE Classic, Type 2/Ultralight, and FeliCa all
-  // carry it). The byte immediately following the RID ("standard") and, for
-  // the ISO14443A storage family, the byte two positions after that ("card
-  // name") are what actually discriminate between the families:
-  //   standard 0x11                         -> FeliCa
-  //   standard 0x03, card name 0x01 or 0x02 -> MIFARE Classic (1K/4K)
-  //   standard 0x03, card name 0x03         -> Type 2 (NTAG/Ultralight)
+  // The PC/SC Part 3 RID A0 00 00 03 06 is shared by every T=CL-emulated
+  // contactless storage card family (MIFARE Classic, Type 2/Ultralight,
+  // and FeliCa all carry it). Per ACS's ACR122U NFC Reader API (section
+  // 3.1.1), the byte immediately after the RID ("standard") is *always*
+  // 0x03 for these families — the real discriminator is a 2-byte "card
+  // name" field (C0, C1) starting one byte after that:
+  //   C0=0x00, C1=0x01 or 0x02 -> MIFARE Classic (1K/4K)
+  //   C0=0x00, C1=0x03         -> Type 2 (NTAG/Ultralight)
+  //   C0=0xF0, C1=0x11 or 0x12 -> FeliCa (212K/424K)
+  // Example FeliCa ATR from the same document: 3B 8F 80 01 80 4F 0C
+  // A0 00 00 03 06 03 F0 11 00 00 00 00 8A.
   final ridIndex = _indexOf(historicalBytes, [0xA0, 0x00, 0x00, 0x03, 0x06]);
   if (ridIndex != null) {
     final standardIndex = ridIndex + 5;
-    if (standardIndex < historicalBytes.length) {
-      final standard = historicalBytes[standardIndex];
-      if (standard == 0x11) {
-        return FelicaTag(card);
+    final c0Index = standardIndex + 1;
+    final c1Index = standardIndex + 2;
+    if (c1Index < historicalBytes.length &&
+        historicalBytes[standardIndex] == 0x03) {
+      final c0 = historicalBytes[c0Index];
+      final c1 = historicalBytes[c1Index];
+      if (c0 == 0x00 && (c1 == 0x01 || c1 == 0x02)) {
+        return MifareClassicTag(card);
       }
-      if (standard == 0x03) {
-        final cardNameIndex = standardIndex + 2;
-        if (cardNameIndex < historicalBytes.length) {
-          final cardName = historicalBytes[cardNameIndex];
-          if (cardName == 0x01 || cardName == 0x02) {
-            return MifareClassicTag(card);
-          }
-          if (cardName == 0x03) {
-            return Type2Tag(card);
-          }
-        }
+      if (c0 == 0x00 && c1 == 0x03) {
+        return Type2Tag(card);
+      }
+      if (c0 == 0xF0 && (c1 == 0x11 || c1 == 0x12)) {
+        return FelicaTag(card);
       }
     }
   }
@@ -144,10 +145,10 @@ Future<TagDriver> _identifyByProbing(CcidCard card, Uint8List? atr) async {
   final felica = FelicaTag(card);
   try {
     final idm = await felica.idm;
-    log.add('FeliCa poll -> succeeded, idm=${hex.encode(idm)}');
+    log.add('FeliCa idm -> succeeded, idm=${hex.encode(idm)}');
     return felica;
   } catch (e) {
-    log.add('FeliCa poll -> failed: $e');
+    log.add('FeliCa idm -> failed: $e');
   }
 
   throw UnrecognizedTagException(

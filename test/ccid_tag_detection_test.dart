@@ -75,9 +75,14 @@ void main() {
     });
 
     test('recognizes a FeliCa ATR', () async {
+      // Real FeliCa 212K ATR from ACS's ACR122U NFC Reader API (section
+      // 7.3): shared RID A0 00 00 03 06, standard byte 0x03 (same as
+      // MIFARE/Type2 — NOT 0x11), card name F0 11. Under the old
+      // standard-byte-is-0x11 check this ATR would never have matched via
+      // the RID path at all.
       final atr = Uint8List.fromList([
         0x3B, 0x8F, 0x80, 0x01, //
-        0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x11, 0x00, 0x3B,
+        0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0xF0, 0x11,
       ]);
       final card = CcidCard('fake-reader', atr: atr);
 
@@ -134,19 +139,27 @@ void main() {
     });
 
     test(
-        'recognizes a FeliCa card via polling even when Get UID fails '
-        '(regression test: Get UID must not gate the other probes, since '
-        "it's an ISO14443-A command and FeliCa is a different RF "
-        'technology)', () async {
+        'recognizes a FeliCa card by its IDm even though every other '
+        'positive probe (Type 2 CC read, ISO-DEP SELECT, MIFARE auth) '
+        'fails (regression test matching real ACR122U + FeliCa hardware: '
+        'Get UID succeeds and returns the IDm, but nothing else does)',
+        () async {
       CcidPlatform.instance = _FakeCcidPlatform({
-        'FFCA000000': null,
-        'FF000000060600FFFF0000': '0A01AABBCCDDEE0011229000',
+        'FFCA000000': 'AABBCCDDEE0011229000',
+        'FFB0000304': '6A82',
+        // '00A4040000' (SELECT) deliberately unmapped: the fake platform
+        // throws for it, which _tryTransceive treats as "no response" —
+        // an *error* status word (any 4+ hex chars) would otherwise
+        // satisfy the SELECT probe's loose "got a response" heuristic and
+        // misclassify this as IsoDepTag.
       });
       final card = CcidCard('fake-reader');
 
       final driver = await identifyTag(card);
 
       expect(driver, isA<FelicaTag>());
+      expect(await (driver as FelicaTag).idm,
+          equals([0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x00, 0x11, 0x22]));
     });
 
     test(

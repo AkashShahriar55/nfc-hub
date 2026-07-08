@@ -32,17 +32,16 @@ void main() {
     CcidPlatform.instance = null;
   });
 
-  // Polling frame (6 bytes): cmd=00, sysCode=FFFF, requestCode=00,
-  // timeSlot=00. Wrapped as FF 00 00 00 <Lc=06> <length-prefixed frame>
-  // where the frame's own length byte (06) counts itself + the 5 bytes
-  // after it.
-  const pollCapdu = 'FF000000060600FFFF0000';
   const idmHex = 'AABBCCDDEE001122';
-  // Response frame (10 bytes): len=0A, respCode=01, idm(8 bytes).
-  const pollResponse = '0A01${idmHex}9000';
+  // idm is read via the standard PC/SC Get UID pseudo-APDU, which returns
+  // the FeliCa IDm on ACR-family readers (ACS ACR122U NFC Reader API,
+  // section 7.3, "The NFC ID can be obtained by using the APDU
+  // FF CA 00 00 00").
+  const uidCapdu = 'FFCA000000';
+  const uidResponse = '${idmHex}9000';
 
-  test('idm polls the card and caches the result', () async {
-    final fake = _FakeCcidPlatform({pollCapdu: pollResponse});
+  test('idm reads the card via Get UID and caches the result', () async {
+    final fake = _FakeCcidPlatform({uidCapdu: uidResponse});
     CcidPlatform.instance = fake;
     final tag = FelicaTag(CcidCard('fake-reader'));
 
@@ -52,28 +51,33 @@ void main() {
     expect(idm, equals([0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x00, 0x11, 0x22]));
     expect(idmAgain, equals(idm));
     expect(
-      fake.requestedCapdus.where((c) => c == pollCapdu),
+      fake.requestedCapdus.where((c) => c == uidCapdu),
       hasLength(1),
-      reason: 'the second idm access should use the cached value, not poll '
+      reason: 'the second idm access should use the cached value, not read '
           'again',
     );
   });
 
   test(
-      'readWithoutEncryption() builds the FeliCa Read Without Encryption '
-      'frame and parses a successful response', () async {
+      'readWithoutEncryption() wraps the FeliCa frame in a PN532 '
+      'InDataExchange command and parses a successful response', () async {
     // Read command frame (15 bytes): cmd=06, idm(8), numServices=01,
     // serviceCode LE (0F22 for 0x220F), numBlocks=01,
-    // blockListElement(80,00). Wrapped as FF 00 00 00 <Lc=10>
-    // <length-prefixed frame> (frame's own length byte = 10 = 15+1).
-    const readCapdu = 'FF000000101006AABBCCDDEE001122010F22018000';
-    // Response frame (29 bytes): len=1D, respCode=07, idm(8), SF1=00,
-    // SF2=00, numBlocks=01, block(16 bytes of 0xAA).
-    const readResponse = '1D07AABBCCDDEE001122000001'
+    // blockListElement(80,00) -> length-prefixed to 16 bytes (10 hex),
+    // then wrapped in D4 40 01 (PN532 InDataExchange, target #1) -> 19
+    // bytes (13 hex) total payload sent via
+    // FF 00 00 00 <Lc> D4 40 01 <frame>. Byte layout verified against ACS's
+    // ACR122U NFC Reader API, section 7.3 worked example.
+    const readCapdu =
+        'FF00000013D440011006AABBCCDDEE001122010F22018000';
+    // Response: D5 41 00 (InDataExchange success) + FeliCa response frame
+    // (29 bytes): len=1D, respCode=07, idm(8), SF1=00, SF2=00, numBlocks=01,
+    // block(16 bytes of 0xAA).
+    const readResponse = 'D541001D07AABBCCDDEE001122000001'
         'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
         '9000';
     final fake = _FakeCcidPlatform({
-      pollCapdu: pollResponse,
+      uidCapdu: uidResponse,
       readCapdu: readResponse,
     });
     CcidPlatform.instance = fake;
@@ -84,5 +88,25 @@ void main() {
     expect(result.isSuccess, isTrue);
     expect(result.blocks, hasLength(1));
     expect(result.blocks[0], equals(List.filled(16, 0xAA)));
+  });
+
+  test('readWithoutEncryption() throws when InDataExchange reports a '
+      'non-zero status', () async {
+    const readCapdu =
+        'FF00000013D440011006AABBCCDDEE001122010F22018000';
+    // D5 41 <non-zero status> — InDataExchange itself failed (e.g. target
+    // lost), no FeliCa response frame follows.
+    const readResponse = 'D5417F9000';
+    final fake = _FakeCcidPlatform({
+      uidCapdu: uidResponse,
+      readCapdu: readResponse,
+    });
+    CcidPlatform.instance = fake;
+    final tag = FelicaTag(CcidCard('fake-reader'));
+
+    expect(
+      () => tag.readWithoutEncryption(0x220F, [0]),
+      throwsException,
+    );
   });
 }

@@ -22,26 +22,30 @@ class FelicaReadResult {
 }
 
 /// Driver for a FeliCa (NFC-F / JIS X 6319-4) tag connected through a
-/// contactless PC/SC reader, sent via the reader's direct-transmit/escape
-/// pseudo-APDU (`FF 00 00 00 <Lc> <data>`) since FeliCa's command framing
-/// isn't ISO 7816 APDUs.
+/// contactless PC/SC reader.
 ///
-/// This escape command framing is a first attempt based on the same
-/// convention `Type2Tag.readChipVersion()` uses; it may need adjusting for
-/// readers that expect a different "direct transmit" byte layout.
+/// FeliCa's command framing isn't ISO 7816 APDUs, so reads go through the
+/// reader's PN532-based direct-transmit escape command, wrapped as a PN532
+/// "InDataExchange" native command (`D4 40 01`, targeting target #1 — the
+/// card already selected by the reader's own continuous PICC polling) per
+/// ACS's ACR122U NFC Reader API (section 7.3, "How to Access FeliCa
+/// Tags"): `FF 00 00 00 <Lc> D4 40 01 <FeliCa command>`, response
+/// `D5 41 <status> <FeliCa response>`.
 class FelicaTag extends TagDriver {
   FelicaTag(super.card);
 
   Uint8List? _idm;
 
-  /// The card's 8-byte IDm, polled once (via a FeliCa Polling / SENSF_REQ
-  /// command) and cached for the lifetime of this driver.
+  /// The card's 8-byte IDm, read once via the reader's standard PC/SC
+  /// "Get Data" pseudo-APDU (`FF CA 00 00 00`) — which returns the FeliCa
+  /// IDm on this class of reader, per ACS's documentation — and cached for
+  /// the lifetime of this driver.
   Future<Uint8List> get idm async {
     final cached = _idm;
     if (cached != null) return cached;
-    final polled = await _poll();
-    _idm = polled;
-    return polled;
+    final read = await transceiveChecked(card, 'FFCA000000');
+    _idm = read;
+    return read;
   }
 
   /// Sends a FeliCa "Read Without Encryption" (command code 0x06) for
@@ -90,31 +94,30 @@ class FelicaTag extends TagDriver {
     );
   }
 
-  Future<Uint8List> _poll() async {
-    final command = Uint8List.fromList([
-      0x00, // Polling command code
-      0xFF, 0xFF, // System Code: wildcard
-      0x00, // Request Code: none
-      0x00, // Time Slot
-    ]);
-    final response = await _transceiveFelicaFrame(command);
-    // Response frame: length(1) | responseCode(1)=0x01 | idm(8) | pmm(8) | ...
-    if (response.length < 10) {
-      throw Exception(
-          'FeliCa polling response too short (${response.length} bytes)');
-    }
-    return Uint8List.sublistView(response, 2, 10);
-  }
-
-  /// Wraps [felicaCommand] in the reader's length-prefix byte and sends it
-  /// via the direct-transmit escape pseudo-APDU, returning the raw FeliCa
-  /// response frame (length byte included).
+  /// Wraps [felicaCommand] in its own length-prefix byte, then in the
+  /// PN532 InDataExchange native command (`D4 40 01`), and sends the whole
+  /// thing via the reader's direct-transmit escape pseudo-APDU
+  /// (`FF 00 00 00 <Lc> <data>`). Strips the `D5 41 <status>`
+  /// InDataExchange response header and returns the raw FeliCa response
+  /// frame (length byte included).
   Future<Uint8List> _transceiveFelicaFrame(Uint8List felicaCommand) async {
-    final framed =
+    final framedFelicaCommand =
         Uint8List.fromList([felicaCommand.length + 1, ...felicaCommand]);
-    final lcHex = framed.length.toRadixString(16).padLeft(2, '0');
-    final dataHex = hex.encode(framed);
+    final payload =
+        Uint8List.fromList([0xD4, 0x40, 0x01, ...framedFelicaCommand]);
+    final lcHex = payload.length.toRadixString(16).padLeft(2, '0');
+    final dataHex = hex.encode(payload);
     final capdu = 'FF000000$lcHex$dataHex'.toUpperCase();
-    return transceiveChecked(card, capdu);
+
+    final response = await transceiveChecked(card, capdu);
+    if (response.length < 3 || response[0] != 0xD5 || response[1] != 0x41) {
+      throw Exception(
+          'Unexpected InDataExchange response header: ${hex.encode(response)}');
+    }
+    if (response[2] != 0x00) {
+      throw Exception('InDataExchange failed with status '
+          '0x${response[2].toRadixString(16).padLeft(2, '0')}');
+    }
+    return Uint8List.sublistView(response, 3);
   }
 }
