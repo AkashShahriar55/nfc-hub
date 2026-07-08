@@ -1,6 +1,8 @@
 import 'package:ccid/ccid.dart';
 import 'package:flutter/material.dart';
 
+import 'mrt_transaction.dart';
+
 class TagDetailsPage extends StatefulWidget {
   final TagDriver driver;
 
@@ -45,7 +47,7 @@ class _TagDetailsPageState extends State<TagDetailsPage> {
       });
     } else if (driver is FelicaTag) {
       await _load('IDm', () async => _hex(await driver.idm));
-      await _load('Service 0x220F, blocks 0-3', () async {
+      await _load('Transactions', () async {
         final result =
             await driver.readWithoutEncryption(0x220F, [0, 1, 2, 3]);
         if (!result.isSuccess) {
@@ -53,7 +55,11 @@ class _TagDetailsPageState extends State<TagDetailsPage> {
               '${result.statusFlag1.toRadixString(16)}/'
               '${result.statusFlag2.toRadixString(16)}';
         }
-        return result.blocks.map(_hex).join('\n');
+        final transactions = parseTransactionBlocks(result.blocks);
+        if (transactions.isEmpty) {
+          return '(no transactions in this block range)';
+        }
+        return transactions.map(_formatTransaction).join('\n');
       });
     } else if (driver is IsoDepTag) {
       await _load('SELECT (empty AID)',
@@ -74,6 +80,16 @@ class _TagDetailsPageState extends State<TagDetailsPage> {
 
   String _hex(List<int> bytes) =>
       bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+
+  String _formatTransaction(Transaction t) {
+    final ts = t.timestamp;
+    final date = '${ts.year}-${_pad(ts.month)}-${_pad(ts.day)} '
+        '${_pad(ts.hour)}:00';
+    return '$date · ${t.typeLabel} · ${t.fromStation} → ${t.toStation} · '
+        'Balance: ${t.balance}';
+  }
+
+  String _pad(int n) => n.toString().padLeft(2, '0');
 
   String _formatPages(List<int> bytes) {
     final lines = <String>[];
@@ -112,7 +128,7 @@ class _TagDetailsPageState extends State<TagDetailsPage> {
     } else if (driver is MifareClassicTag) {
       return ['Sector 0'];
     } else if (driver is FelicaTag) {
-      return ['IDm', 'Service 0x220F, blocks 0-3'];
+      return ['IDm', 'Transactions'];
     } else if (driver is IsoDepTag) {
       return ['SELECT (empty AID)'];
     }
