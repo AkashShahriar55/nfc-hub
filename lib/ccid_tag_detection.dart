@@ -86,7 +86,7 @@ Future<TagDriver> _identifyByProbing(CcidCard card) async {
   try {
     await mifare.authenticateWithDefaultKeys(0);
     return mifare;
-  } on MifareAuthException {
+  } catch (_) {
     // fall through
   }
 
