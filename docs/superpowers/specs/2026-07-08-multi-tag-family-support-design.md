@@ -20,7 +20,8 @@ The motivating case is porting MRT/RapidPass transit card reading (a FeliCa/NFC-
 ## Non-goals
 
 - DESFire's native command set (proprietary auth handshake, session-key derivation, file-system model). `IsoDepTag` gives raw APDU access to DESFire and other applet cards, but no DESFire-specific typed methods. This was explicitly descoped after discussion — it's a substantial, separate crypto implementation, not an incremental add-on.
-- Fixing `dart_pcsc`'s lack of an `SCardStatus`/ATR API. Linux/Windows will rely on capability-probing detection for now; ATR-based detection there is a future improvement once that gap is addressed upstream or worked around locally.
+- Native ATR plumbing on any platform other than Android. `CcidPlugin.swift` (iOS/macOS) is not touched this pass, and fixing `dart_pcsc`'s lack of an `SCardStatus`/ATR API (Linux/Windows) is out of scope entirely. All three rely on capability-probing detection for now; ATR-based detection there is a future improvement.
+- Hardware validation on any platform other than Android — this pass's manual testing (MIFARE Classic, FeliCa, ISO-DEP) is against an Android device + USB CCID reader only.
 - MIFARE Classic key management beyond a short built-in list of well-known default keys — no key-derivation, no per-deployment key storage.
 - Card-type-specific writing (NDEF write, MIFARE block write, FeliCa write-with-encryption). This spec is read-side only, matching the scope of the existing tag-info work.
 
@@ -46,11 +47,9 @@ This is a breaking change to the public API — version bumps to 0.2.0, CHANGELO
 
 ### ATR plumbing
 
-`atr` needs to reach `CcidCard` from `connect()`. Per platform:
+This pass is scoped to **Android only**. `Ccid.kt`'s `iccPowerOn()` already returns the ATR bytes (`CcidPlugin.kt:245` currently just logs them); `CcidPlugin.kt`'s `connect` handler is changed to return the ATR as a hex string in its method result instead of a bare success, and `MethodChannelCcid.connect()` reads it and threads it into the returned `CcidCard`.
 
-- **Android**: `Ccid.kt`'s `iccPowerOn()` already returns the ATR bytes (`CcidPlugin.kt:245` currently just logs them). `CcidPlugin.kt`'s `connect` handler returns the ATR as a hex string in its method result instead of a bare success; `MethodChannelCcid.connect()` reads it and threads it into the returned `CcidCard`.
-- **macOS/iOS**: `CcidPlugin.swift`'s `connect` case reads `TKSmartCard.atr` and returns it the same way.
-- **Linux/Windows**: `dart_pcsc`'s `Card` has no `SCardStatus` wrapper, so `atr` stays `null` here for this pass (see Non-goals). `identifyTag()` falls back to probing whenever `atr` is null.
+`MethodChannelCcid` also backs iOS and macOS (see `ccid_platform_interface.dart`'s platform selection), but `CcidPlugin.swift` is not touched in this pass — iOS/macOS `connect()` keeps returning `nil`, so `atr` stays `null` there, same as Linux/Windows via `dart_pcsc` (which has no `SCardStatus` wrapper at all). `identifyTag()` falls back to capability probing whenever `atr` is null, so every platform still works — Android is just the only one with ATR-based detection until a later pass extends the same native change to `CcidPlugin.swift` and `dart_pcsc`.
 
 ### Tag driver hierarchy
 
@@ -154,5 +153,5 @@ Future<TagDriver> identifyTag(CcidCard card);
 
 - `FelicaTag`'s escape/direct-transmit command framing is a first guess based on the existing `readChipVersion()` convention; the reader in hand may expect a different byte layout (e.g. a vendor-specific "switch RF protocol" command before FeliCa polling works at all). Expect iteration during hardware testing.
 - `MifareClassicTag`'s key-load/general-authenticate opcodes (`FF82`/`FF88`) are the standard PC/SC Part 3 convention, but reader firmware compliance varies; needs confirmation against the user's specific reader.
-- ATR-based detection is only fully wired on Android and macOS/iOS this pass; Linux/Windows always uses the probing fallback until `dart_pcsc` gains ATR support. This is a functional gap, not a correctness one — probing still detects correctly, just with more round-trips.
+- ATR-based detection is only wired on Android this pass; iOS/macOS/Linux/Windows always use the probing fallback until later work extends ATR plumbing to `CcidPlugin.swift` and `dart_pcsc`. This is a functional gap, not a correctness one — probing still detects correctly, just with more round-trips.
 - Moving today's Type 2 methods off `CcidCard` onto `Type2Tag` is a breaking change for any existing consumer of this library; needs a clear CHANGELOG migration note and a minor version bump (0.2.0).
