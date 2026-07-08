@@ -1,3 +1,6 @@
+import 'dart:typed_data';
+
+import 'package:convert/convert.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -17,10 +20,11 @@ class MethodChannelCcid extends CcidPlatform {
   }
 
   @override
-  Future<CcidCard> connect(String reader) {
-    return methodChannel
-        .invokeMethod('connect', reader)
-        .then((value) => CcidCard(reader));
+  Future<CcidCard> connect(String reader) async {
+    final atrHex = await methodChannel.invokeMethod<String>('connect', reader);
+    final atr =
+        atrHex != null ? Uint8List.fromList(hex.decode(atrHex)) : null;
+    return CcidCard(reader, atr: atr);
   }
 
   @override
