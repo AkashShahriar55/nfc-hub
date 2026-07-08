@@ -25,6 +25,7 @@ class CcidPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     private var readers = mutableMapOf<String, Reader>()
 
     private val usbReceiver = object : BroadcastReceiver() {
+        @OptIn(ExperimentalStdlibApi::class)
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == ACTION_USB_PERMISSION) {
                 synchronized(this) {
@@ -36,10 +37,11 @@ class CcidPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                                 Log.e(TAG, "Reader not found")
                                 return
                             }
-                            val ccid = connectToInterface(device, reader.interfaceIdx)
-                            if (ccid != null) {
+                            val connected = connectToInterface(device, reader.interfaceIdx)
+                            if (connected != null) {
+                                val (ccid, atr) = connected
                                 readers[reader.name] = reader.copy(ccid = ccid, result = null)
-                                reader.result!!.success(null)
+                                reader.result!!.success(atr.toHexString())
                             } else {
                                 reader.result!!.error(
                                     "CCID_READER_CONNECT_ERROR",
@@ -179,6 +181,7 @@ class CcidPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         return readers.keys.toList()
     }
 
+    @OptIn(ExperimentalStdlibApi::class)
     private fun connect(name: String, result: Result) {
         val reader = readers[name]
         if (reader == null) {
@@ -212,10 +215,11 @@ class CcidPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             usbManager.requestPermission(device, pendingIntent)
             return
         } else {
-            val ccid = connectToInterface(device, reader.interfaceIdx)
-            if (ccid != null) {
+            val connected = connectToInterface(device, reader.interfaceIdx)
+            if (connected != null) {
+                val (ccid, atr) = connected
                 readers[name] = reader.copy(ccid = ccid)
-                result.success(null)
+                result.success(atr.toHexString())
             } else {
                 result.error("CCID_READER_CONNECT_ERROR", "Failed to connect", null)
             }
@@ -223,7 +227,7 @@ class CcidPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     }
 
     @OptIn(ExperimentalStdlibApi::class)
-    private fun connectToInterface(device: UsbDevice, interfaceIdx: Int): Ccid? {
+    private fun connectToInterface(device: UsbDevice, interfaceIdx: Int): Pair<Ccid, ByteArray>? {
         val usbInterface = device.getInterface(interfaceIdx)
         val usbConnection = usbManager.openDevice(device)
         if (usbConnection == null) {
@@ -244,7 +248,7 @@ class CcidPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             }
             val atr = ccid.iccPowerOn()
             Log.d(TAG, "ATR: ${atr.toHexString()}")
-            ccid
+            Pair(ccid, atr)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to connect to interface: ${e.message}")
             null
