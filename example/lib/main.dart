@@ -71,13 +71,22 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
-  void _readTagDetails() {
+  Future<void> _readTagDetails() async {
     if (_card == null) return;
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => TagDetailsPage(card: _card!),
-      ),
-    );
+    try {
+      final driver = await identifyTag(_card!);
+      if (!mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => TagDetailsPage(driver: driver),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not identify tag: $e')),
+      );
+    }
   }
 
   @override

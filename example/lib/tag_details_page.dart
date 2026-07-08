@@ -2,20 +2,16 @@ import 'package:ccid/ccid.dart';
 import 'package:flutter/material.dart';
 
 class TagDetailsPage extends StatefulWidget {
-  final CcidCard card;
+  final TagDriver driver;
 
-  const TagDetailsPage({super.key, required this.card});
+  const TagDetailsPage({super.key, required this.driver});
 
   @override
   State<TagDetailsPage> createState() => _TagDetailsPageState();
 }
 
 class _TagDetailsPageState extends State<TagDetailsPage> {
-  String? _uidResult;
-  String? _capabilityContainerResult;
-  String? _ndefResult;
-  String? _memoryDumpResult;
-  String? _chipVersionResult;
+  final Map<String, String> _results = {};
 
   @override
   void initState() {
@@ -24,72 +20,55 @@ class _TagDetailsPageState extends State<TagDetailsPage> {
   }
 
   Future<void> _loadAll() async {
-    await _loadUid();
-    await _loadCapabilityContainer();
-    await _loadNdef();
-    await _loadMemoryDump();
-    await _loadChipVersion();
-  }
-
-  Future<void> _loadUid() async {
-    try {
-      final uid = await widget.card.readUid();
-      if (!mounted) return;
-      setState(() => _uidResult = _hex(uid));
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _uidResult = 'Failed: $e');
-    }
-  }
-
-  Future<void> _loadCapabilityContainer() async {
-    try {
-      final cc = await widget.card.readCapabilityContainer();
-      if (!mounted) return;
-      setState(() => _capabilityContainerResult = cc.toString());
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _capabilityContainerResult = 'Failed: $e');
-    }
-  }
-
-  Future<void> _loadNdef() async {
-    try {
-      final records = await widget.card.readNdef();
-      if (!mounted) return;
-      setState(() {
-        _ndefResult =
-            records.isEmpty ? '(empty message)' : records.join('\n');
+    final driver = widget.driver;
+    if (driver is Type2Tag) {
+      await _load('UID', () async => _hex(await driver.readUid()));
+      await _load('Capability Container',
+          () async => (await driver.readCapabilityContainer()).toString());
+      await _load('NDEF', () async {
+        final records = await driver.readNdef();
+        return records.isEmpty ? '(empty message)' : records.join('\n');
       });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _ndefResult = 'Failed: $e');
-    }
-  }
-
-  Future<void> _loadMemoryDump() async {
-    try {
-      final dump = await widget.card.readMemoryDump();
-      if (!mounted) return;
-      setState(() => _memoryDumpResult = _formatPages(dump));
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _memoryDumpResult = 'Failed: $e');
-    }
-  }
-
-  Future<void> _loadChipVersion() async {
-    try {
-      final version = await widget.card.readChipVersion();
-      if (!mounted) return;
-      setState(() {
-        _chipVersionResult = version == null
+      await _load('Memory Dump',
+          () async => _formatPages(await driver.readMemoryDump()));
+      await _load('Chip Version', () async {
+        final version = await driver.readChipVersion();
+        return version == null
             ? 'Unavailable (reader/tag does not support GET_VERSION)'
             : version.toString();
       });
+    } else if (driver is MifareClassicTag) {
+      await _load('Sector 0', () async {
+        await driver.authenticateWithDefaultKeys(0);
+        final blocks = await driver.readSector(0);
+        return blocks.map(_hex).join('\n');
+      });
+    } else if (driver is FelicaTag) {
+      await _load('IDm', () async => _hex(await driver.idm));
+      await _load('Service 0x220F, blocks 0-3', () async {
+        final result =
+            await driver.readWithoutEncryption(0x220F, [0, 1, 2, 3]);
+        if (!result.isSuccess) {
+          return 'Card reported status '
+              '${result.statusFlag1.toRadixString(16)}/'
+              '${result.statusFlag2.toRadixString(16)}';
+        }
+        return result.blocks.map(_hex).join('\n');
+      });
+    } else if (driver is IsoDepTag) {
+      await _load('SELECT (empty AID)',
+          () async => await driver.selectApplication('') ?? '(no response)');
+    }
+  }
+
+  Future<void> _load(String title, Future<String> Function() body) async {
+    try {
+      final value = await body();
+      if (!mounted) return;
+      setState(() => _results[title] = value);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _chipVersionResult = 'Failed: $e');
+      setState(() => _results[title] = 'Failed: $e');
     }
   }
 
@@ -121,20 +100,36 @@ class _TagDetailsPageState extends State<TagDetailsPage> {
     );
   }
 
+  List<String> _sectionTitlesFor(TagDriver driver) {
+    if (driver is Type2Tag) {
+      return [
+        'UID',
+        'Capability Container',
+        'NDEF',
+        'Memory Dump',
+        'Chip Version',
+      ];
+    } else if (driver is MifareClassicTag) {
+      return ['Sector 0'];
+    } else if (driver is FelicaTag) {
+      return ['IDm', 'Service 0x220F, blocks 0-3'];
+    } else if (driver is IsoDepTag) {
+      return ['SELECT (empty AID)'];
+    }
+    return [];
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Tag Details')),
+      appBar: AppBar(title: Text('Tag Details (${widget.driver.runtimeType})')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _section('UID', _uidResult),
-            _section('Capability Container', _capabilityContainerResult),
-            _section('NDEF', _ndefResult),
-            _section('Memory Dump', _memoryDumpResult),
-            _section('Chip Version', _chipVersionResult),
+            for (final title in _sectionTitlesFor(widget.driver))
+              _section(title, _results[title]),
           ],
         ),
       ),
