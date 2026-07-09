@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:ccid/ccid_desfire_info.dart';
 import 'package:flutter_test/flutter_test.dart';
 

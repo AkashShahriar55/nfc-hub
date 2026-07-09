@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'ccid_platform_interface.dart';
 
 export 'ccid_felica.dart' show FelicaInfo, FelicaTag, FelicaReadResult;
+export 'ccid_felica_info.dart' show felicaSystemCodeLabel;
 export 'ccid_iso_b.dart' show TypeBInfo, TypeBTag;
 export 'ccid_iso_dep.dart' show IsoDepInfo, IsoDepTag;
 export 'ccid_mifare_classic.dart'

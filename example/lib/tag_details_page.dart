@@ -42,8 +42,20 @@ class _TagDetailsPageState extends State<TagDetailsPage> {
         'UID: ${_hex(info.uid)}',
         'ATR: ${info.atr == null ? '(none)' : _hex(info.atr!)}',
       ];
-      if (info is FelicaInfo && info.systemCodes.isNotEmpty) {
-        lines.add('System codes: ${info.systemCodes.map((c) => '0x${c.toRadixString(16).padLeft(4, '0').toUpperCase()}').join(', ')}');
+      if (info is FelicaInfo) {
+        if (info.modelName != null) {
+          lines.add(
+              'Chip model: ${info.modelName} (unofficial, community-sourced)');
+        }
+        if (info.systemCodes.isNotEmpty) {
+          final codeDescriptions = info.systemCodes.map((c) {
+            final hexCode =
+                '0x${c.toRadixString(16).padLeft(4, '0').toUpperCase()}';
+            final label = felicaSystemCodeLabel(c);
+            return label == null ? hexCode : '$hexCode ($label, unofficial)';
+          }).join(', ');
+          lines.add('System codes: $codeDescriptions');
+        }
       }
       if (info is IsoDepInfo && info.desfireVersion != null) {
         lines.add('DESFire UID: ${_hex(info.desfireVersion!.uid)}');
