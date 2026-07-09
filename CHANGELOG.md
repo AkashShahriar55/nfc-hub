@@ -1,3 +1,12 @@
+## 0.3.0
+
+* Add `readTagInfo()` to every tag driver (`Type2Tag`, `MifareClassicTag`, `FelicaTag`, `IsoDepTag`, `TypeBTag`), returning a common `TagInfo` (technology, UID, ATR) plus family-specific details (SAK/ATQA, FeliCa PMm-derived chip model and system codes, DESFire generation).
+* Add real SAK/ATQA identification via a new PN532 `InListPassiveTarget` poll (`pollTypeA`/`pollTypeB` in `src/pn532.dart`), independent of the ATR.
+* Add `FelicaTag.pmm` and `FelicaTag.requestSystemCodes()`.
+* Add `IsoDepTag.readDesfireVersion()`, decoding DESFire's 3-frame `GetVersion` exchange into `DesfireVersion` and resolving the exact generation (EV1/EV2/EV3/EV2 XL/DUOX/Light) via `desfireGenerationLabel()`.
+* Add `TypeBTag`, a new ISO14443-B driver, and a matching `identifyTag()` fallback step.
+* FeliCa chip-model and System Code labels are sourced from community reverse-engineering projects, not an official Sony publication — see the doc comments on `felicaModelName`/`felicaSystemCodeLabel`.
+
 ## 0.2.0
 
 * **Breaking:** `CcidCard` is now a raw transport only (`transceive`, `disconnect`, `atr`). The Type 2 Tag reads previously on `CcidCard` (`readUid`, `readCapabilityContainer`, `readMemoryDump`, `readChipVersion`, `readNdef`) have moved to `Type2Tag`, obtained via `identifyTag(card)`.
