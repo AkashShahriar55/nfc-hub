@@ -121,6 +121,31 @@ class FelicaTag extends TagDriver {
     );
   }
 
+  /// Enumerates every System Code present on the card via the native
+  /// "Request System Code" command (`0x0C`), not just whichever System a
+  /// specific service-code read happens to target.
+  Future<List<int>> requestSystemCodes() async {
+    final cardIdm = await idm;
+    final command = Uint8List.fromList([0x0C, ...cardIdm]);
+    final response = await _transceiveFelicaFrame(command);
+    // Response frame: length(1) | responseCode(1)=0x0D | idm(8) |
+    // numSystems(1) | systemCode(2) x numSystems.
+    if (response.length < 11) {
+      throw Exception('Request System Code response too short '
+          '(${response.length} bytes)');
+    }
+    final numSystems = response[10];
+    final systemCodes = <int>[];
+    var offset = 11;
+    for (var i = 0;
+        i < numSystems && offset + 2 <= response.length;
+        i++) {
+      systemCodes.add((response[offset] << 8) | response[offset + 1]);
+      offset += 2;
+    }
+    return systemCodes;
+  }
+
   /// Wraps [felicaCommand] in its own length-prefix byte, then in the
   /// PN532 InDataExchange native command (`D4 40 01`), and sends the whole
   /// thing via the reader's direct-transmit escape pseudo-APDU

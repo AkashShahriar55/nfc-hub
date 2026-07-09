@@ -135,4 +135,26 @@ void main() {
       throwsException,
     );
   });
+
+  test('requestSystemCodes() enumerates every system on the card', () async {
+    const uidResponseLocal = '${idmHex}9000';
+    // Request System Code command (0C + idm(8), 9 bytes) framed to 10 bytes
+    // (leading length byte 0A), wrapped in D4 40 01 -> 13-byte payload ->
+    // Lc=0D.
+    const requestCapdu = 'FF0000000DD440010A0CAABBCCDDEE001122';
+    // Response frame: len=0F (15 bytes: len+respCode+idm(8)+numSystems+
+    // 2 system codes), respCode=0D, idm(8), numSystems=02,
+    // systemCode0=0003, systemCode1=90E3.
+    const requestResponse = 'D541000F0D${idmHex}02000390E39000';
+    final fake = _FakeCcidPlatform({
+      uidCapdu: uidResponseLocal,
+      requestCapdu: requestResponse,
+    });
+    CcidPlatform.instance = fake;
+    final tag = FelicaTag(CcidCard('fake-reader'));
+
+    final systemCodes = await tag.requestSystemCodes();
+
+    expect(systemCodes, equals([0x0003, 0x90E3]));
+  });
 }
