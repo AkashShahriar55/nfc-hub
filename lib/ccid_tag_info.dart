@@ -108,3 +108,94 @@ class ChipVersion {
       'storageSize: 0x${storageSize.toRadixString(16)}, '
       'protocolType: 0x${protocolType.toRadixString(16)})';
 }
+
+class _UltralightModelEntry {
+  final int vendorId;
+  final int productType;
+  final int productSubtype;
+  final int majorVersion;
+  final int minorVersion;
+  final int storageSize;
+  final int protocolType;
+  final String name;
+
+  const _UltralightModelEntry(
+    this.vendorId,
+    this.productType,
+    this.productSubtype,
+    this.majorVersion,
+    this.minorVersion,
+    this.storageSize,
+    this.protocolType,
+    this.name,
+  );
+}
+
+/// Known MIFARE Ultralight/NTAG `GET_VERSION` tuples, sourced from NXP's
+/// NTAG213/215/216 and MF0ULX1 datasheets plus the Proxmark3 project's
+/// field-validated `ul_family[]` table.
+const _ultralightModels = <_UltralightModelEntry>[
+  _UltralightModelEntry(
+      0x04, 0x03, 0x01, 0x00, 0x00, 0x0B, 0x03, 'MIFARE Ultralight'),
+  _UltralightModelEntry(0x04, 0x03, 0x01, 0x01, 0x00, 0x0B, 0x03,
+      'MIFARE Ultralight EV1 (48B, 17pF)'),
+  _UltralightModelEntry(0x04, 0x03, 0x02, 0x01, 0x00, 0x0B, 0x03,
+      'MIFARE Ultralight EV1 (48B, 50pF)'),
+  _UltralightModelEntry(0x04, 0x03, 0x01, 0x01, 0x00, 0x0E, 0x03,
+      'MIFARE Ultralight EV1 (128B, 17pF)'),
+  _UltralightModelEntry(0x04, 0x03, 0x02, 0x01, 0x00, 0x0E, 0x03,
+      'MIFARE Ultralight EV1 (128B, 50pF)'),
+  _UltralightModelEntry(0x04, 0x03, 0x01, 0x02, 0x00, 0x0B, 0x03,
+      'MIFARE Ultralight Nano 40B (17pF)'),
+  _UltralightModelEntry(0x04, 0x03, 0x01, 0x03, 0x00, 0x0B, 0x03,
+      'MIFARE Ultralight Nano (17pF)'),
+  _UltralightModelEntry(
+      0x04, 0x04, 0x01, 0x01, 0x00, 0x0B, 0x03, 'NTAG 210'),
+  _UltralightModelEntry(
+      0x04, 0x04, 0x02, 0x01, 0x00, 0x0B, 0x03, 'NTAG 210'),
+  _UltralightModelEntry(
+      0x04, 0x04, 0x01, 0x01, 0x00, 0x0E, 0x03, 'NTAG 212'),
+  _UltralightModelEntry(
+      0x04, 0x04, 0x02, 0x01, 0x00, 0x0F, 0x03, 'NTAG 213'),
+  _UltralightModelEntry(
+      0x04, 0x04, 0x04, 0x01, 0x00, 0x0F, 0x03, 'NTAG 213F'),
+  _UltralightModelEntry(
+      0x04, 0x04, 0x02, 0x01, 0x01, 0x0F, 0x03, 'NTAG 213C'),
+  _UltralightModelEntry(
+      0x04, 0x04, 0x02, 0x03, 0x00, 0x0F, 0x03, 'NTAG 213TT'),
+  _UltralightModelEntry(
+      0x04, 0x04, 0x02, 0x01, 0x00, 0x11, 0x03, 'NTAG 215'),
+  _UltralightModelEntry(
+      0x04, 0x04, 0x04, 0x01, 0x00, 0x11, 0x03, 'NTAG 215F'),
+  _UltralightModelEntry(
+      0x04, 0x04, 0x02, 0x01, 0x00, 0x13, 0x03, 'NTAG 216'),
+  _UltralightModelEntry(
+      0x04, 0x04, 0x04, 0x01, 0x00, 0x13, 0x03, 'NTAG 216F'),
+];
+
+/// Resolves an exact NXP model name from [version], falling back to a
+/// coarse family label (`productType`: `0x03` -> Ultralight family,
+/// `0x04` -> NTAG family) if the exact tuple isn't in the table, matching
+/// Proxmark3's own fallback strategy. Returns `null` for a non-NXP vendor
+/// ID (`version.vendorId != 0x04`).
+String? ultralightModelName(ChipVersion version) {
+  for (final entry in _ultralightModels) {
+    if (entry.vendorId == version.vendorId &&
+        entry.productType == version.productType &&
+        entry.productSubtype == version.productSubtype &&
+        entry.majorVersion == version.majorVersion &&
+        entry.minorVersion == version.minorVersion &&
+        entry.storageSize == version.storageSize &&
+        entry.protocolType == version.protocolType) {
+      return entry.name;
+    }
+  }
+  if (version.vendorId != 0x04) return null;
+  if (version.productType == 0x03) {
+    return 'MIFARE Ultralight family (unrecognized exact model)';
+  }
+  if (version.productType == 0x04) {
+    return 'NTAG family (unrecognized exact model)';
+  }
+  return null;
+}
