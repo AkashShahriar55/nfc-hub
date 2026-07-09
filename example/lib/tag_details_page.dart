@@ -21,8 +21,40 @@ class _TagDetailsPageState extends State<TagDetailsPage> {
     _loadAll();
   }
 
+  Future<void> _loadTagInfo(TagDriver driver) async {
+    await _load('Tag Info', () async {
+      final TagInfo info;
+      if (driver is Type2Tag) {
+        info = await driver.readTagInfo();
+      } else if (driver is MifareClassicTag) {
+        info = await driver.readTagInfo();
+      } else if (driver is FelicaTag) {
+        info = await driver.readTagInfo();
+      } else if (driver is IsoDepTag) {
+        info = await driver.readTagInfo();
+      } else if (driver is TypeBTag) {
+        info = await driver.readTagInfo();
+      } else {
+        return 'Unsupported driver type';
+      }
+      final lines = [
+        'Technology: ${info.technology}',
+        'UID: ${_hex(info.uid)}',
+        'ATR: ${info.atr == null ? '(none)' : _hex(info.atr!)}',
+      ];
+      if (info is FelicaInfo && info.systemCodes.isNotEmpty) {
+        lines.add('System codes: ${info.systemCodes.map((c) => '0x${c.toRadixString(16).padLeft(4, '0').toUpperCase()}').join(', ')}');
+      }
+      if (info is IsoDepInfo && info.desfireVersion != null) {
+        lines.add('DESFire UID: ${_hex(info.desfireVersion!.uid)}');
+      }
+      return lines.join('\n');
+    });
+  }
+
   Future<void> _loadAll() async {
     final driver = widget.driver;
+    await _loadTagInfo(driver);
     if (driver is Type2Tag) {
       await _load('UID', () async => _hex(await driver.readUid()));
       await _load('Capability Container',
@@ -119,6 +151,7 @@ class _TagDetailsPageState extends State<TagDetailsPage> {
   List<String> _sectionTitlesFor(TagDriver driver) {
     if (driver is Type2Tag) {
       return [
+        'Tag Info',
         'UID',
         'Capability Container',
         'NDEF',
@@ -126,11 +159,13 @@ class _TagDetailsPageState extends State<TagDetailsPage> {
         'Chip Version',
       ];
     } else if (driver is MifareClassicTag) {
-      return ['Sector 0'];
+      return ['Tag Info', 'Sector 0'];
     } else if (driver is FelicaTag) {
-      return ['IDm', 'Transactions'];
+      return ['Tag Info', 'IDm', 'Transactions'];
     } else if (driver is IsoDepTag) {
-      return ['SELECT (empty AID)'];
+      return ['Tag Info', 'SELECT (empty AID)'];
+    } else if (driver is TypeBTag) {
+      return ['Tag Info'];
     }
     return [];
   }
