@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:convert/convert.dart';
 
+import 'ccid_felica_info.dart';
 import 'ccid_tag_driver.dart';
 import 'src/apdu.dart';
 
@@ -19,6 +20,27 @@ class FelicaReadResult {
 
   /// Whether the card reported success (both status flags zero).
   bool get isSuccess => statusFlag1 == 0x00 && statusFlag2 == 0x00;
+}
+
+class FelicaInfo implements TagInfo {
+  @override
+  final String technology;
+  @override
+  final Uint8List uid; // IDm
+  @override
+  final Uint8List? atr;
+  final Uint8List pmm;
+  final String? modelName;
+  final List<int> systemCodes;
+
+  const FelicaInfo({
+    required this.technology,
+    required this.uid,
+    required this.atr,
+    required this.pmm,
+    required this.modelName,
+    required this.systemCodes,
+  });
 }
 
 /// Driver for a FeliCa (NFC-F / JIS X 6319-4) tag connected through a
@@ -73,6 +95,30 @@ class FelicaTag extends TagDriver {
     final read = Uint8List.sublistView(response, 10, 18);
     _pmm = read;
     return read;
+  }
+
+  /// A generic identification summary: IDm, PMm-derived chip model
+  /// (community-sourced -- see [felicaModelName]), and every System Code
+  /// on the card (best-effort -- a failure here doesn't prevent returning
+  /// the rest of the info).
+  Future<FelicaInfo> readTagInfo() async {
+    final cardIdm = await idm;
+    final cardPmm = await pmm;
+    final model = felicaModelName(cardPmm);
+    var systemCodes = <int>[];
+    try {
+      systemCodes = await requestSystemCodes();
+    } catch (_) {
+      // best-effort; leave systemCodes empty
+    }
+    return FelicaInfo(
+      technology: model == null ? 'FeliCa' : 'FeliCa ($model)',
+      uid: cardIdm,
+      atr: card.atr,
+      pmm: cardPmm,
+      modelName: model,
+      systemCodes: systemCodes,
+    );
   }
 
   /// Sends a FeliCa "Read Without Encryption" (command code 0x06) for

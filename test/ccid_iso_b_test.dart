@@ -44,4 +44,15 @@ void main() {
 
     expect(tag.atqb, equals(atqb));
   });
+
+  test('readTagInfo() extracts the PUPI from ATQB', () async {
+    final atqb = Uint8List.fromList(
+        [0x50, 0x11, 0x22, 0x33, 0x44, 0, 0, 0, 0, 0, 0, 0]);
+    final tag = TypeBTag(CcidCard('fake-reader'), atqb);
+
+    final info = await tag.readTagInfo();
+
+    expect(info.uid, equals([0x11, 0x22, 0x33, 0x44]));
+    expect(info.technology, equals('ISO14443-B'));
+  });
 }

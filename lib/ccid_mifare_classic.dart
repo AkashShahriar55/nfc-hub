@@ -2,8 +2,10 @@ import 'dart:typed_data';
 
 import 'package:convert/convert.dart';
 
+import 'ccid_mifare_info.dart';
 import 'ccid_tag_driver.dart';
 import 'src/apdu.dart';
+import 'src/pn532.dart';
 
 /// Which MIFARE Classic key slot (A or B) to authenticate with.
 enum MifareKeyType { a, b }
@@ -18,6 +20,25 @@ class MifareAuthException implements Exception {
 
   @override
   String toString() => 'MifareAuthException: $message';
+}
+
+class MifareClassicInfo implements TagInfo {
+  @override
+  final String technology;
+  @override
+  final Uint8List uid;
+  @override
+  final Uint8List? atr;
+  final int sak;
+  final Uint8List atqa;
+
+  const MifareClassicInfo({
+    required this.technology,
+    required this.uid,
+    required this.atr,
+    required this.sak,
+    required this.atqa,
+  });
 }
 
 /// Driver for a MIFARE Classic 1K/4K tag connected through a contactless
@@ -94,6 +115,23 @@ class MifareClassicTag extends TagDriver {
       blocks.add(await readBlock(block));
     }
     return blocks;
+  }
+
+  /// A generic identification summary using the real SAK/ATQA read
+  /// directly from the card via a PN532 poll, independent of the ATR.
+  Future<MifareClassicInfo> readTagInfo() async {
+    final target = await pollTypeA(card);
+    if (target == null) {
+      throw Exception('No Type A target found while reading tag info');
+    }
+    final family = mifareFamilyFromSak(target.sak);
+    return MifareClassicInfo(
+      technology: mifareFamilyLabel(family),
+      uid: target.uid,
+      atr: card.atr,
+      sak: target.sak,
+      atqa: target.atqa,
+    );
   }
 
   int _blockForSector(int sector) => sector * 4;

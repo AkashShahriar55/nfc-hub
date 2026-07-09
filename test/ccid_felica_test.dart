@@ -157,4 +157,29 @@ void main() {
 
     expect(systemCodes, equals([0x0003, 0x90E3]));
   });
+
+  test('readTagInfo() combines idm, pmm-derived model, and system codes',
+      () async {
+    const pollCapdu = 'FF00000009D440010600FFFF0000';
+    // ROM Type 0x03, IC Type 0x35 -> RC-SA01/2 (the confirmed Dhaka MRT
+    // chip -- see ccid_felica_info_test.dart).
+    const pmmHex = '0335428282468CFF';
+    const pollResponse = 'D541001201$idmHex${pmmHex}9000';
+    const requestCapdu = 'FF0000000DD440010A0CAABBCCDDEE001122';
+    // 1 system code (90E3): len=0D (13 bytes: len+respCode+idm(8)+
+    // numSystems+1 system code).
+    const requestResponse = 'D541000D' '0D' '$idmHex' '01' '90E3' '9000';
+    final fake = _FakeCcidPlatform({
+      uidCapdu: uidResponse,
+      pollCapdu: pollResponse,
+      requestCapdu: requestResponse,
+    });
+    CcidPlatform.instance = fake;
+    final tag = FelicaTag(CcidCard('fake-reader'));
+
+    final info = await tag.readTagInfo();
+
+    expect(info.technology, equals('FeliCa (RC-SA01/2)'));
+    expect(info.systemCodes, equals([0x90E3]));
+  });
 }

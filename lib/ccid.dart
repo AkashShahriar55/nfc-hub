@@ -2,16 +2,16 @@ import 'dart:typed_data';
 
 import 'ccid_platform_interface.dart';
 
-export 'ccid_felica.dart' show FelicaTag, FelicaReadResult;
-export 'ccid_iso_b.dart' show TypeBTag;
-export 'ccid_iso_dep.dart' show IsoDepTag;
+export 'ccid_felica.dart' show FelicaInfo, FelicaTag, FelicaReadResult;
+export 'ccid_iso_b.dart' show TypeBInfo, TypeBTag;
+export 'ccid_iso_dep.dart' show IsoDepInfo, IsoDepTag;
 export 'ccid_mifare_classic.dart'
-    show MifareClassicTag, MifareKeyType, MifareAuthException;
+    show MifareClassicInfo, MifareClassicTag, MifareKeyType, MifareAuthException;
 export 'ccid_ndef.dart' show NdefRecord;
 export 'ccid_tag_detection.dart' show identifyTag;
-export 'ccid_tag_driver.dart' show TagDriver, UnrecognizedTagException;
+export 'ccid_tag_driver.dart' show TagDriver, TagInfo, UnrecognizedTagException;
 export 'ccid_tag_info.dart' show CapabilityContainer, ChipVersion;
-export 'ccid_type2.dart' show Type2Tag;
+export 'ccid_type2.dart' show Type2Tag, Type2TagInfo;
 
 class Ccid {
   /// List available readers

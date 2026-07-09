@@ -91,4 +91,18 @@ void main() {
     expect(blocks[0], equals(List.filled(16, 0x00)));
     expect(blocks[3], equals(List.filled(16, 0x03)));
   });
+
+  test('readTagInfo() resolves the family from a real PN532 poll', () async {
+    final fake = _FakeCcidPlatform({
+      'FF00000004D44A0100': 'D54B01010044080704010203040506' '9000',
+    });
+    CcidPlatform.instance = fake;
+    final tag = MifareClassicTag(CcidCard('fake-reader'));
+
+    final info = await tag.readTagInfo();
+
+    expect(info.technology, equals('MIFARE Classic 1K'));
+    expect(info.sak, equals(0x08));
+    expect(info.uid, equals([0x04, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06]));
+  });
 }

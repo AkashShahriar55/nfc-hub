@@ -5,6 +5,23 @@ import 'ccid_tag_driver.dart';
 import 'ccid_tag_info.dart';
 import 'src/apdu.dart';
 
+class Type2TagInfo implements TagInfo {
+  @override
+  final String technology;
+  @override
+  final Uint8List uid;
+  @override
+  final Uint8List? atr;
+  final CapabilityContainer? capabilityContainer;
+
+  const Type2TagInfo({
+    required this.technology,
+    required this.uid,
+    required this.atr,
+    required this.capabilityContainer,
+  });
+}
+
 /// Driver for an NFC Forum Type 2 Tag (e.g. NTAG213/215/216, Mifare
 /// Ultralight) connected through a contactless PC/SC reader.
 class Type2Tag extends TagDriver {
@@ -31,6 +48,25 @@ class Type2Tag extends TagDriver {
   /// Reads the tag's UID via the standard PC/SC "Get Data" pseudo-APDU.
   Future<Uint8List> readUid() {
     return transceiveChecked(card, 'FFCA000000');
+  }
+
+  /// A generic identification summary: UID, ATR, and the Capability
+  /// Container if the tag has one (best-effort -- a read failure here
+  /// doesn't prevent returning the rest of the info).
+  Future<Type2TagInfo> readTagInfo() async {
+    final tagUid = await readUid();
+    CapabilityContainer? cc;
+    try {
+      cc = await readCapabilityContainer();
+    } catch (_) {
+      // best-effort; leave cc null
+    }
+    return Type2TagInfo(
+      technology: 'NFC Forum Type 2 (MIFARE Ultralight/NTAG)',
+      uid: tagUid,
+      atr: card.atr,
+      capabilityContainer: cc,
+    );
   }
 
   /// Reads and parses the tag's Capability Container (CC), normally found

@@ -4,8 +4,26 @@ import 'package:convert/convert.dart';
 
 import 'ccid_desfire_info.dart';
 import 'ccid_tag_driver.dart';
+import 'src/pn532.dart';
 
 export 'ccid_desfire_info.dart' show DesfireVersion;
+
+class IsoDepInfo implements TagInfo {
+  @override
+  final String technology;
+  @override
+  final Uint8List uid;
+  @override
+  final Uint8List? atr;
+  final DesfireVersion? desfireVersion;
+
+  const IsoDepInfo({
+    required this.technology,
+    required this.uid,
+    required this.atr,
+    required this.desfireVersion,
+  });
+}
 
 /// Thin driver for a generic ISO14443-4 ("ISO-DEP") processor card (e.g.
 /// DESFire or another applet-based smart card) connected through a
@@ -26,6 +44,29 @@ class IsoDepTag extends TagDriver {
   /// Sends a raw APDU [capdu] (hex-encoded) and returns the response APDU
   /// (hex-encoded), unchanged from [CcidCard.transceive].
   Future<String?> transceive(String capdu) => card.transceive(capdu);
+
+  /// A generic identification summary. Attempts a DESFire `GetVersion`
+  /// (best-effort -- most non-DESFire ISO14443-4 cards will fail this,
+  /// which is expected and doesn't prevent returning the rest of the info).
+  Future<IsoDepInfo> readTagInfo() async {
+    final target = await pollTypeA(card);
+    final tagUid = target?.uid ?? Uint8List(0);
+    DesfireVersion? version;
+    try {
+      version = await readDesfireVersion();
+    } catch (_) {
+      // best-effort; leave version null
+    }
+    final technology = version == null
+        ? 'ISO14443-4 (generic)'
+        : 'ISO14443-4: ${desfireGenerationLabel(version)}';
+    return IsoDepInfo(
+      technology: technology,
+      uid: tagUid,
+      atr: card.atr,
+      desfireVersion: version,
+    );
+  }
 
   /// Reads the card's DESFire `GetVersion` (native command `0x60`),
   /// identifying the exact chip generation. Only valid for DESFire-class
