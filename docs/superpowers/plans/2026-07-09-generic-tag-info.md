@@ -678,9 +678,9 @@ test('pmm polls the card and returns the 8-byte PMm, cached', () async {
   // length byte 06), wrapped in D4 40 01 -> 9-byte payload -> Lc=09.
   const pollCapdu = 'FF00000009D440010600FFFF0000';
   const pmmHex = '0135428282468CFF';
-  // Response frame: len=12 (18 bytes: len+respCode+idm(8)+pmm(8)),
-  // respCode=01, idm(8), pmm(8).
-  const pollResponse = '1201$idmHex${pmmHex}9000';
+  // Response: D5 41 00 (InDataExchange success) + FeliCa response frame
+  // (18 bytes: len=12, respCode=01, idm(8), pmm(8)).
+  const pollResponse = 'D541001201$idmHex${pmmHex}9000';
   final fake = _FakeCcidPlatform({pollCapdu: pollResponse});
   CcidPlatform.instance = fake;
   final tag = FelicaTag(CcidCard('fake-reader'));
@@ -1931,7 +1931,7 @@ test('readTagInfo() combines idm, pmm-derived model, and system codes',
     () async {
   const pollCapdu = 'FF00000009D440010600FFFF0000';
   const pmmHex = '0135428282468CFF';
-  const pollResponse = '1201$idmHex${pmmHex}9000';
+  const pollResponse = 'D541001201$idmHex${pmmHex}9000';
   const requestCapdu = 'FF0000000DD440010A0CAABBCCDDEE001122';
   // 1 system code (90E3): len=0D (13 bytes: len+respCode+idm(8)+
   // numSystems+1 system code).
