@@ -105,11 +105,8 @@ class FelicaTag extends TagDriver {
         Uint8List.fromList([felicaCommand.length + 1, ...felicaCommand]);
     final payload =
         Uint8List.fromList([0xD4, 0x40, 0x01, ...framedFelicaCommand]);
-    final lcHex = payload.length.toRadixString(16).padLeft(2, '0');
-    final dataHex = hex.encode(payload);
-    final capdu = 'FF000000$lcHex$dataHex'.toUpperCase();
 
-    final response = await transceiveChecked(card, capdu);
+    final response = await transceiveEscape(card, payload);
     if (response.length < 3 || response[0] != 0xD5 || response[1] != 0x41) {
       throw Exception(
           'Unexpected InDataExchange response header: ${hex.encode(response)}');

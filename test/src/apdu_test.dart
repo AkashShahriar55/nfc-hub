@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:ccid/ccid.dart';
 import 'package:ccid/ccid_platform_interface.dart';
 import 'package:ccid/src/apdu.dart';
@@ -65,6 +67,20 @@ void main() {
       final card = CcidCard('fake-reader');
 
       expect(() => transceiveChecked(card, '00A4'), throwsException);
+    });
+  });
+
+  group('transceiveEscape', () {
+    test('wraps the payload in the FF 00 00 00 <Lc> escape command and '
+        'returns the checked response', () async {
+      CcidPlatform.instance = _FakeCcidPlatform(
+          {'FF00000003AABBCC': '${hex.encode([0x01, 0x02])}9000'});
+      final card = CcidCard('fake-reader');
+
+      final data = await transceiveEscape(
+          card, Uint8List.fromList([0xAA, 0xBB, 0xCC]));
+
+      expect(data, equals([0x01, 0x02]));
     });
   });
 }

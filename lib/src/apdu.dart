@@ -24,3 +24,13 @@ Future<Uint8List> transceiveChecked(CcidCard card, String capdu) async {
   }
   return data;
 }
+
+/// Wraps [payload] in the reader's direct-transmit escape pseudo-APDU
+/// (`FF 00 00 00 <Lc> <data>`) and returns the checked response data
+/// (status-word-stripped, requiring a `9000` success).
+Future<Uint8List> transceiveEscape(CcidCard card, Uint8List payload) {
+  final lcHex = payload.length.toRadixString(16).padLeft(2, '0');
+  final dataHex = hex.encode(payload);
+  final capdu = 'FF000000$lcHex$dataHex'.toUpperCase();
+  return transceiveChecked(card, capdu);
+}
