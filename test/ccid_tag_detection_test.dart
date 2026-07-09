@@ -177,5 +177,19 @@ void main() {
         expect(e.message, contains('Get UID'));
       }
     });
+
+    test('recognizes a Type B card via the PN532 poll when nothing else '
+        'matches', () async {
+      CcidPlatform.instance = _FakeCcidPlatform({
+        'FFCA000000': null,
+        'FF00000004D44A0103':
+            'D54B' '01' '01' '${'11' * 12}' '00' '9000',
+      });
+      final card = CcidCard('fake-reader');
+
+      final driver = await identifyTag(card);
+
+      expect(driver, isA<TypeBTag>());
+    });
   });
 }

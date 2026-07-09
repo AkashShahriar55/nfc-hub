@@ -4,11 +4,13 @@ import 'package:convert/convert.dart';
 
 import 'ccid.dart' show CcidCard;
 import 'ccid_felica.dart';
+import 'ccid_iso_b.dart';
 import 'ccid_iso_dep.dart';
 import 'ccid_mifare_classic.dart';
 import 'ccid_tag_driver.dart';
 import 'ccid_type2.dart';
 import 'src/apdu.dart';
+import 'src/pn532.dart';
 
 /// Identifies the tag family of the card connected through [card] and
 /// returns the matching typed driver.
@@ -151,8 +153,19 @@ Future<TagDriver> _identifyByProbing(CcidCard card, Uint8List? atr) async {
     log.add('FeliCa idm -> failed: $e');
   }
 
+  try {
+    final typeBTarget = await pollTypeB(card);
+    if (typeBTarget != null) {
+      log.add('Type B poll -> succeeded, atqb=${hex.encode(typeBTarget.atqb)}');
+      return TypeBTag(card, typeBTarget.atqb);
+    }
+    log.add('Type B poll -> no target found');
+  } catch (e) {
+    log.add('Type B poll -> failed: $e');
+  }
+
   throw UnrecognizedTagException(
     'Card did not match any known tag family (Type 2, MIFARE Classic, '
-    'FeliCa, or ISO-DEP). ${log.join('; ')}',
+    'FeliCa, ISO-DEP, or ISO14443-B). ${log.join('; ')}',
   );
 }
