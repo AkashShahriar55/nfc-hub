@@ -35,6 +35,7 @@ class FelicaTag extends TagDriver {
   FelicaTag(super.card);
 
   Uint8List? _idm;
+  Uint8List? _pmm;
 
   /// The card's 8-byte IDm, read once via the reader's standard PC/SC
   /// "Get Data" pseudo-APDU (`FF CA 00 00 00`) — which returns the FeliCa
@@ -45,6 +46,32 @@ class FelicaTag extends TagDriver {
     if (cached != null) return cached;
     final read = await transceiveChecked(card, 'FFCA000000');
     _idm = read;
+    return read;
+  }
+
+  /// The card's 8-byte PMm (Manufacturer Parameter), read once via a
+  /// FeliCa Polling (SENSF_REQ) command sent through the same
+  /// InDataExchange-wrapped escape command `readWithoutEncryption` uses,
+  /// and cached for the lifetime of this driver. PMm's first two bytes
+  /// (ROM Type, IC Type) identify the chip model — see
+  /// [felicaModelName] in `ccid_felica_info.dart`.
+  Future<Uint8List> get pmm async {
+    final cached = _pmm;
+    if (cached != null) return cached;
+    final command = Uint8List.fromList([
+      0x00, // Polling command code
+      0xFF, 0xFF, // System Code: wildcard
+      0x00, // Request Code: none
+      0x00, // Time Slot
+    ]);
+    final response = await _transceiveFelicaFrame(command);
+    // Response frame: length(1) | responseCode(1)=0x01 | idm(8) | pmm(8).
+    if (response.length < 18) {
+      throw Exception(
+          'FeliCa polling response too short (${response.length} bytes)');
+    }
+    final read = Uint8List.sublistView(response, 10, 18);
+    _pmm = read;
     return read;
   }
 

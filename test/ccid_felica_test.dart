@@ -1,5 +1,6 @@
 import 'package:ccid/ccid.dart';
 import 'package:ccid/ccid_platform_interface.dart';
+import 'package:convert/convert.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class _FakeCcidPlatform extends CcidPlatform {
@@ -54,6 +55,31 @@ void main() {
       fake.requestedCapdus.where((c) => c == uidCapdu),
       hasLength(1),
       reason: 'the second idm access should use the cached value, not read '
+          'again',
+    );
+  });
+
+  test('pmm polls the card and returns the 8-byte PMm, cached', () async {
+    // Polling command (00 FF FF 00 00, 5 bytes) framed to 6 bytes (leading
+    // length byte 06), wrapped in D4 40 01 -> 9-byte payload -> Lc=09.
+    const pollCapdu = 'FF00000009D440010600FFFF0000';
+    const pmmHex = '0135428282468CFF';
+    // Response: D5 41 00 (InDataExchange success) + FeliCa response frame
+    // (18 bytes: len=12, respCode=01, idm(8), pmm(8)).
+    const pollResponse = 'D541001201$idmHex${pmmHex}9000';
+    final fake = _FakeCcidPlatform({pollCapdu: pollResponse});
+    CcidPlatform.instance = fake;
+    final tag = FelicaTag(CcidCard('fake-reader'));
+
+    final pmm = await tag.pmm;
+    final pmmAgain = await tag.pmm;
+
+    expect(pmm, equals(hex.decode(pmmHex)));
+    expect(pmmAgain, equals(pmm));
+    expect(
+      fake.requestedCapdus.where((c) => c == pollCapdu),
+      hasLength(1),
+      reason: 'the second pmm access should use the cached value, not poll '
           'again',
     );
   });
