@@ -268,6 +268,29 @@ void main() {
 
       expect(t.historicalBytes, atr);
     });
+
+    test(
+        'isoDep() does not throw when the PN532 poll escape is rejected by '
+        'a generic (non-ACS) CCID reader -- it degrades to an empty UID '
+        'instead of taking down the whole driver (regression test: '
+        'pollTypeA -> transceiveChecked throws on a non-9000 SW, and that '
+        'used to propagate straight out of isoDep())', () async {
+      install({
+        // Instruction not supported -- what a reader lacking the PN532
+        // escape dialect would return.
+        'FF00000004D44A0100': '6D00',
+        '00A4040000': '9000',
+      });
+
+      final t = await CcidTransportBackend(CcidCard('fake')).isoDep();
+
+      expect(await t.uid, isEmpty);
+
+      platform.sent.clear();
+      final r = await t.transceive(Uint8List.fromList([0, 0xA4, 4, 0, 0]));
+      expect(platform.sent, ['00A4040000']);
+      expect(r, Uint8List.fromList([0x90, 0x00]));
+    });
   });
 
   group('NfcB transport', () {

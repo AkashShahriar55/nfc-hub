@@ -189,6 +189,28 @@ void main() {
       expect(driver, isA<IsoDepTag>());
     });
 
+    test(
+        'recognizes an ISO-DEP card via a SELECT response even when the '
+        'reader rejects the PN532 poll outright (regression test: a generic '
+        'CCID reader without the PN532 escape dialect returns an error SW '
+        'for the poll, not a graceful "no target found" -- that used to '
+        'make isoDep() throw and identifyTag() hard-abort instead of '
+        'degrading to an empty UID)', () async {
+      NfcHubPlatform.instance = _FakeCcidPlatform({
+        'FFCA000000': '00019000',
+        'FFB0000304': '6A82',
+        '00A4040000': '6A82',
+        // Instruction not supported -- what a reader lacking the PN532
+        // escape dialect would return, instead of a "no target found" SW.
+        'FF00000004D44A0100': '6D00',
+      });
+      final card = CcidCard('fake-reader');
+
+      final driver = await identifyTag(card);
+
+      expect(driver, isA<IsoDepTag>());
+    });
+
     test('throws UnrecognizedTagException when nothing responds', () async {
       NfcHubPlatform.instance = _FakeCcidPlatform({'FFCA000000': null});
       final card = CcidCard('fake-reader');

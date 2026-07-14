@@ -29,10 +29,20 @@ class CcidTransportBackend {
     return _CcidMifareClassicTransport(card, target);
   }
 
-  /// Async: polls for the UID.
+  /// Async: polls for the UID. The poll is best-effort -- it rides on the
+  /// PN532 escape command, which a generic (non-ACS) CCID reader may not
+  /// implement at all. A reader that cannot poll still gets a working
+  /// ISO-DEP driver; only the UID is unavailable. ISO 7816-4 APDUs need no
+  /// reader-specific dialect, so ISO-DEP must work on ANY CCID reader.
   Future<IsoDepTransport> isoDep() async {
-    final target = await pollTypeA(card);
-    return _CcidIsoDepTransport(card, target?.uid ?? Uint8List(0));
+    Uint8List uid;
+    try {
+      final target = await pollTypeA(card);
+      uid = target?.uid ?? Uint8List(0);
+    } catch (_) {
+      uid = Uint8List(0);
+    }
+    return _CcidIsoDepTransport(card, uid);
   }
 
   /// Null if no Type B target answers.
