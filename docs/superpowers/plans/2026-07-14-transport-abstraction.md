@@ -250,12 +250,14 @@ Written TDD: the tests assert the exact APDU hex string sent for every operation
 **Interfaces:**
 - Consumes: the five interfaces from Task 1; `CcidCard` from `lib/src/nfc_hub_base.dart`; `stripAndCheckSw`/`transceiveChecked` from `lib/src/apdu.dart`.
 - Produces: `CcidTransportBackend`, constructed as `CcidTransportBackend(card)`, exposing:
-  - `Future<Type2Transport> type2()`
-  - `Future<MifareClassicTransport> mifareClassic()` — async because it must poll for ATQA/SAK/UID
-  - `Future<NfcFTransport> nfcF()`
-  - `Future<IsoDepTransport> isoDep()` — async, polls for UID
-  - `Future<NfcBTransport?> nfcB()` — null if no Type B target answers
-  Task 8 (`identifyTag`) is the only consumer.
+  - `Type2Transport type2()` — **sync**, needs no round-trip
+  - `NfcFTransport nfcF()` — **sync**, idm/pmm are fetched lazily by the transport itself
+  - `Future<MifareClassicTransport> mifareClassic()` — **async**: must poll (PN532 `InListPassiveTarget`) for ATQA/SAK/UID, because the interface exposes those as sync getters
+  - `Future<IsoDepTransport> isoDep()` — **async**, polls for the UID
+  - `Future<NfcBTransport?> nfcB()` — **async**, null if no Type B target answers
+
+  Sync vs. async here is load-bearing for Tasks 3-8: `await` the last three, do NOT
+  `await` the first two. Task 8's `identifyTag` is the only consumer.
 
 **THE EXACT APDUs — copy these verbatim, do not retype from memory:**
 
@@ -384,7 +386,7 @@ void main() {
       install({
         'FF00000004D44A0100': pollA,
         'FF82000006FFFFFFFFFFFF': '9000',
-        'FF86000005010004600000': '9000',
+        'FF860000050100046000': '9000',
       });
       final t = await CcidTransportBackend(CcidCard('fake')).mifareClassic();
       platform.sent.clear();
@@ -399,7 +401,8 @@ void main() {
         // Load Key: slot 00, 6-byte key, UPPERCASE hex.
         'FF82000006FFFFFFFFFFFF',
         // General Authenticate: block 04, key A (60), slot 00.
-        'FF86000005010004600000',
+        // 10 bytes: FF 86 00 00 Lc=05 | 01 00 04 60 00 (5 data bytes).
+        'FF860000050100046000',
       ]);
     });
 
