@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:fake_async/fake_async.dart';
@@ -33,6 +34,11 @@ class _FakePlatform extends NfcHubPlatform {
   final List<String> listReadersLog = [];
   final List<String> connectLog = [];
   final List<String> transceiveLog = [];
+  final List<String> disconnectLog = [];
+
+  /// When set, [disconnect] throws this instead of returning -- used to
+  /// verify a throwing disconnect doesn't break the poll loop.
+  Object? disconnectError;
 
   @override
   Future<List<String>> listReaders() async {
@@ -59,7 +65,10 @@ class _FakePlatform extends NfcHubPlatform {
   }
 
   @override
-  Future<void> disconnect(String reader) async {}
+  Future<void> disconnect(String reader) async {
+    disconnectLog.add(reader);
+    if (disconnectError != null) throw disconnectError!;
+  }
 }
 
 void main() {
@@ -211,5 +220,218 @@ void main() {
         expect(platform.connectLog, ['reader-1', 'reader-1']);
       });
     });
+
+    test(
+        'a held card removed (probe throws) calls disconnect() exactly '
+        'once, and a re-insertion connects again without a second '
+        'disconnect', () {
+      FakeAsync().run((async) {
+        final platform = _FakePlatform()
+          ..readers = ['reader-1']
+          ..cardsPresent.add('reader-1');
+        final source = CcidSource(platform);
+        addTearDown(source.dispose);
+
+        source.tags().listen((_) {});
+
+        // Tick 1: card seated -> connect succeeds, no disconnect yet.
+        async.elapse(const Duration(milliseconds: 500));
+        expect(platform.connectLog, ['reader-1']);
+        expect(platform.disconnectLog, isEmpty);
+
+        // Card pulled: the next probe throws -> disconnect() called once.
+        platform.cardsPresent.remove('reader-1');
+        async.elapse(const Duration(milliseconds: 500));
+        expect(platform.disconnectLog, ['reader-1']);
+
+        // Still empty: the reader keeps retrying connect() every tick (as
+        // covered by the existing "connect() that throws" test), but that
+        // must never trigger another disconnect.
+        async.elapse(const Duration(milliseconds: 500));
+        expect(platform.disconnectLog, ['reader-1']);
+
+        // Re-insertion: connect() succeeds again (2nd successful connect),
+        // and no new disconnect happens while the new card is held.
+        platform.cardsPresent.add('reader-1');
+        async.elapse(const Duration(milliseconds: 500));
+        expect(platform.connectLog, ['reader-1', 'reader-1', 'reader-1'],
+            reason: 'tick1 connect, tick3 failed retry, tick4 reconnect');
+        expect(platform.disconnectLog, ['reader-1'],
+            reason: 'disconnect count stays 1 while the new card is held');
+      });
+    });
+
+    test(
+        'a reader that vanishes while occupied disconnects it before '
+        'dropping it from tracking', () {
+      FakeAsync().run((async) {
+        final platform = _FakePlatform()
+          ..readers = ['reader-1']
+          ..cardsPresent.add('reader-1');
+        final source = CcidSource(platform);
+        addTearDown(source.dispose);
+
+        source.tags().listen((_) {});
+
+        // Tick 1: card seated and connected.
+        async.elapse(const Duration(milliseconds: 500));
+        expect(platform.connectLog, ['reader-1']);
+        expect(platform.disconnectLog, isEmpty);
+
+        // The reader is unplugged entirely (not just the card removed).
+        platform.readers = [];
+        platform.cardsPresent.clear();
+        async.elapse(const Duration(milliseconds: 500));
+
+        expect(platform.disconnectLog, ['reader-1']);
+      });
+    });
+
+    test('dispose() while a card is occupied disconnects it', () {
+      FakeAsync().run((async) {
+        final platform = _FakePlatform()
+          ..readers = ['reader-1']
+          ..cardsPresent.add('reader-1');
+        final source = CcidSource(platform);
+
+        source.tags().listen((_) {});
+
+        // Tick 1: card seated and connected.
+        async.elapse(const Duration(milliseconds: 500));
+        expect(platform.connectLog, ['reader-1']);
+        expect(platform.disconnectLog, isEmpty);
+
+        source.dispose();
+        async.flushMicrotasks();
+
+        expect(platform.disconnectLog, ['reader-1']);
+      });
+    });
+
+    test(
+        'a disconnect() that itself throws does not break the loop -- the '
+        'next tick still runs', () {
+      FakeAsync().run((async) {
+        final platform = _FakePlatform()
+          ..readers = ['reader-1']
+          ..cardsPresent.add('reader-1');
+        final source = CcidSource(platform);
+        addTearDown(source.dispose);
+
+        final drivers = <TagDriver>[];
+        source.tags().listen(drivers.add);
+
+        // Tick 1: card seated and connected.
+        async.elapse(const Duration(milliseconds: 500));
+        expect(drivers, hasLength(1));
+
+        // Card pulled, and disconnect() itself throws.
+        platform.cardsPresent.remove('reader-1');
+        platform.disconnectError = Exception('disconnect failed');
+        expect(
+          () => async.elapse(const Duration(milliseconds: 500)),
+          returnsNormally,
+        );
+        expect(platform.disconnectLog, ['reader-1']);
+
+        // The loop is still alive: the next tick still polls and a
+        // re-insertion is picked up normally.
+        platform.disconnectError = null;
+        platform.cardsPresent.add('reader-1');
+        async.elapse(const Duration(milliseconds: 500));
+        expect(drivers, hasLength(2));
+      });
+    });
+
+    test(
+        'per-reader isolation: one reader whose connect() throws does not '
+        "abort the tick -- the other reader's card still emits and shows "
+        'cardPresent: true', () {
+      FakeAsync().run((async) {
+        final platform = _FakePlatform()
+          ..readers = ['reader-empty', 'reader-1']
+          ..cardsPresent.add('reader-1');
+        final source = CcidSource(platform);
+        addTearDown(source.dispose);
+
+        final drivers = <TagDriver>[];
+        final states = <List<ExternalReaderState>>[];
+        source.tags().listen(drivers.add);
+        source.readerStates().listen(states.add);
+
+        async.elapse(const Duration(milliseconds: 500));
+
+        expect(drivers, hasLength(1));
+        expect(drivers.single, isA<Type2Tag>());
+        expect(
+          states.last,
+          containsAll(<ExternalReaderState>[
+            const ExternalReaderState('reader-1', true),
+            const ExternalReaderState('reader-empty', false),
+          ]),
+        );
+      });
+    });
+
+    test(
+        "tick overlap guard: a tick whose async work outlives one poll "
+        'interval is not double-run by an overlapping tick -- the reader '
+        'is connected and emitted exactly once', () {
+      FakeAsync().run((async) {
+        final platform = _SlowConnectFakePlatform()
+          ..readers = ['reader-1']
+          ..cardsPresent.add('reader-1');
+        final source = CcidSource(platform);
+        addTearDown(source.dispose);
+
+        final drivers = <TagDriver>[];
+        source.tags().listen(drivers.add);
+
+        // The first tick's listReaders() call is now in flight, held open
+        // by platform.hold. Elapse past several poll intervals' worth of
+        // fake time while that first tick is still pending: if the
+        // `_ticking` guard didn't work, each of these ticks would start
+        // its OWN listReaders() call concurrently, bumping callCount past
+        // 1 -- even though every call (old or new) would equally be stuck
+        // awaiting the same still-incomplete `hold`.
+        async.elapse(const Duration(milliseconds: 1600));
+        expect(platform.callCount, 1,
+            reason:
+                'only the first tick ever entered listReaders() -- the '
+                'guard must have skipped every overlapping tick attempt '
+                'before it got this far');
+        expect(platform.connectLog, isEmpty);
+
+        // Let the first (and only) tick's listReaders() -- and everything
+        // after it -- complete.
+        platform.hold.complete();
+        async.elapse(const Duration(milliseconds: 500));
+
+        expect(platform.connectLog, ['reader-1']);
+        expect(drivers, hasLength(1));
+      });
+    });
   });
+}
+
+/// A [_FakePlatform] whose [listReaders] doesn't complete until [hold] is
+/// completed -- used to hold a tick's async work open across multiple
+/// [FakeAsync.elapse] calls, so a test can assert the `_ticking` guard
+/// prevents an overlapping second tick from starting concurrently.
+class _SlowConnectFakePlatform extends _FakePlatform {
+  final Completer<void> hold = Completer<void>();
+
+  /// Incremented the instant [listReaders] is entered, BEFORE awaiting
+  /// [hold] -- unlike [listReadersLog] (only appended after the await
+  /// resolves), this distinguishes "no overlapping call was ever attempted"
+  /// from "an overlapping call was attempted and is also stuck on `hold`",
+  /// which would otherwise look identical from the log alone.
+  int callCount = 0;
+
+  @override
+  Future<List<String>> listReaders() async {
+    callCount++;
+    await hold.future;
+    return super.listReaders();
+  }
 }

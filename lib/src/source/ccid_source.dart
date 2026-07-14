@@ -42,6 +42,14 @@ enum _ReaderStatus { empty, occupied }
 /// signal that the card was pulled. (This is the same pseudo-APDU
 /// [CcidTransportBackend]'s `Type2Transport.readUid` and `NfcFTransport.idm`
 /// use for an actual UID read; here only success/failure matters.)
+///
+/// This assumes the reader answers `FFCA000000` for a present card of any
+/// family -- validated by hand on the ACR122U for MIFARE, Type B, and
+/// FeliCa. A card family that *throws* rather than returns null/an error
+/// SW on this pseudo-APDU (instead of the failure modes seen so far) could
+/// false-trigger a removal on an otherwise-still-present card. Flagged for
+/// further hardware validation across reader/card combinations, not a code
+/// fix -- do not change this probe APDU as part of addressing that risk.
 const _probeApdu = 'FFCA000000';
 
 /// Turns the CCID/PC-SC readers [NfcHubPlatform] can see into a stream of
@@ -65,11 +73,16 @@ const _probeApdu = 'FFCA000000';
 ///    [NfcHubPlatform.transceive] as a liveness check. Success means the
 ///    same card is still seated -- nothing is re-emitted (a card that stays
 ///    put emits exactly once). A throw means the card was removed -- the
-///    reader moves back to **empty** so the next tick's empty-handling can
-///    pick up a re-insertion.
+///    reader moves back to **empty**, [NfcHubPlatform.disconnect] releases
+///    the connection the emitted [TagDriver] was holding, and the next
+///    tick's empty-handling can pick up a re-insertion.
 ///
 /// A reader that disappears from [NfcHubPlatform.listReaders] entirely
-/// (unplugged) is dropped from tracking outright.
+/// (unplugged) is dropped from tracking outright, disconnecting first if it
+/// was occupied. [dispose] does the same for every still-occupied reader.
+/// A still-occupied reader is NEVER disconnected while the card remains
+/// present -- the emitted [TagDriver] holds that same connection open so
+/// the app can drive reads (`readNdef`, `readSector`, etc.) against it.
 ///
 /// The loop only runs while [tags] or [readerStates] has a listener --
 /// mirroring [AndroidNfcSource]'s onListen/onCancel gating -- so nothing
@@ -182,8 +195,14 @@ class CcidSource implements TagSource {
     final vanished =
         _status.keys.where((r) => !readerSet.contains(r)).toList();
     for (final reader in vanished) {
+      final wasOccupied = _status[reader] == _ReaderStatus.occupied;
       _status.remove(reader);
       changed = true;
+      // The reader itself is gone, so any connection held for its card is
+      // no longer reachable through it -- release the handle rather than
+      // leaking it (Android: an unclosed USB device handle; PC/SC: a Card
+      // whose context.release() would otherwise never fire).
+      if (wasOccupied) await _disconnectQuietly(reader);
     }
 
     // Start tracking newly-seen readers as empty.
@@ -244,7 +263,28 @@ class CcidSource implements TagSource {
       return true;
     } catch (_) {
       _status[reader] = _ReaderStatus.empty;
+      // The card is gone -- release the connection the emitted TagDriver
+      // was holding open for reads. Never called while still occupied: a
+      // still-present card must keep its connection alive for the app's
+      // in-flight reads.
+      await _disconnectQuietly(reader);
       return false;
+    }
+  }
+
+  /// Releases the connection held for [reader]'s card. Best-effort: a
+  /// disconnect on a card/reader that is already gone can itself throw, and
+  /// that must never break the poll loop -- log and move on.
+  Future<void> _disconnectQuietly(String reader) async {
+    try {
+      await _platform.disconnect(reader);
+    } catch (error, stackTrace) {
+      developer.log(
+        'disconnect() failed for reader "$reader": $error',
+        name: 'nfc_hub.CcidSource',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 
@@ -260,6 +300,11 @@ class CcidSource implements TagSource {
   Future<void> dispose() async {
     _timer?.cancel();
     _timer = null;
+    for (final entry in _status.entries) {
+      if (entry.value == _ReaderStatus.occupied) {
+        await _disconnectQuietly(entry.key);
+      }
+    }
     await _tagsController?.close();
     await _statesController?.close();
   }
