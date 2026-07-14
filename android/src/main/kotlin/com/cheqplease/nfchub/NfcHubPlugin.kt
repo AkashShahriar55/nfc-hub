@@ -1,16 +1,19 @@
 package com.cheqplease.nfchub
 
+import android.app.Activity
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.hardware.usb.*
+import android.nfc.NfcAdapter
 import android.os.Build
 import io.flutter.Log
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
@@ -20,9 +23,32 @@ import io.flutter.plugin.common.MethodChannel.Result
 /** NfcHubPlugin */
 class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     private lateinit var channel: MethodChannel
+    private lateinit var eventChannel: EventChannel
     private lateinit var context: Context
+    private lateinit var appContext: Context
     private lateinit var usbManager: UsbManager
     private var readers = mutableMapOf<String, Reader>()
+
+    // --- Built-in (reader-mode) NFC state ---
+    private lateinit var nfcController: NfcReaderModeController
+    private var nfcEventSink: EventChannel.EventSink? = null
+    private var activityBinding: Activity? = null
+    // Source of truth for "should reader mode be on" is Dart (Task 4's
+    // AndroidNfcSource, listener-count driven). We just remember the last
+    // request so we can re-apply it across activity/config-change transitions
+    // and once a fresh controller/sink appears.
+    private var nfcReaderModeRequested = false
+
+    private val nfcStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(ctx: Context, intent: Intent) {
+            if (intent.action == NfcAdapter.ACTION_ADAPTER_STATE_CHANGED) {
+                val map = HashMap<String, Any?>()
+                map["type"] = "nfcStateChanged"
+                map["state"] = nfcController.nfcState()
+                nfcEventSink?.success(map)
+            }
+        }
+    }
 
     private val usbReceiver = object : BroadcastReceiver() {
         @OptIn(ExperimentalStdlibApi::class)
@@ -72,6 +98,26 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
         channel = MethodChannel(flutterPluginBinding.binaryMessenger, "nfc_hub")
         channel.setMethodCallHandler(this)
+
+        appContext = flutterPluginBinding.applicationContext
+        nfcController = NfcReaderModeController(appContext, null)
+
+        eventChannel = EventChannel(flutterPluginBinding.binaryMessenger, "nfc_hub/events")
+        eventChannel.setStreamHandler(object : EventChannel.StreamHandler {
+            override fun onListen(arguments: Any?, sink: EventChannel.EventSink) {
+                nfcEventSink = sink
+                nfcController = NfcReaderModeController(appContext, sink)
+                nfcController.attachActivity(activityBinding)
+                if (nfcReaderModeRequested) nfcController.startReaderMode()
+            }
+
+            override fun onCancel(arguments: Any?) {
+                nfcController.stopReaderMode()
+                nfcEventSink = null
+                nfcController = NfcReaderModeController(appContext, null)
+                nfcController.attachActivity(activityBinding)
+            }
+        })
     }
 
     @OptIn(ExperimentalStdlibApi::class)
@@ -117,6 +163,67 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 readers[name] = reader.copy(ccid = null)
             }
 
+            "nfcStartReaderMode" -> {
+                nfcReaderModeRequested = true
+                nfcController.startReaderMode()
+                result.success(null)
+            }
+
+            "nfcStopReaderMode" -> {
+                nfcReaderModeRequested = false
+                nfcController.stopReaderMode()
+                result.success(null)
+            }
+
+            "nfcTransceive" -> {
+                val handle = call.argument<Int>("handle")!!
+                val tech = call.argument<String>("tech")!!
+                val data = call.argument<ByteArray>("data")!!
+                try {
+                    result.success(nfcController.transceive(handle, tech, data))
+                } catch (e: TagGoneException) {
+                    result.error("TAG_LOST", e.message, null)
+                }
+            }
+
+            "nfcMifareAuth" -> {
+                val handle = call.argument<Int>("handle")!!
+                val sector = call.argument<Int>("sector")!!
+                val keyA = call.argument<Boolean>("keyA")!!
+                val key = call.argument<ByteArray>("key")!!
+                try {
+                    val ok = nfcController.mifareAuthenticate(handle, sector, keyA, key)
+                    if (ok) {
+                        result.success(null)
+                    } else {
+                        result.error("MIFARE_AUTH_FAILED", "MIFARE sector authentication rejected", null)
+                    }
+                } catch (e: TagGoneException) {
+                    result.error("TAG_LOST", e.message, null)
+                }
+            }
+
+            "nfcMifareReadBlock" -> {
+                val handle = call.argument<Int>("handle")!!
+                val block = call.argument<Int>("block")!!
+                try {
+                    result.success(nfcController.mifareReadBlock(handle, block))
+                } catch (e: TagGoneException) {
+                    result.error("TAG_LOST", e.message, null)
+                }
+            }
+
+            "getNfcState" -> {
+                result.success(nfcController.nfcState())
+            }
+
+            "openNfcSettings" -> {
+                val intent = Intent(android.provider.Settings.ACTION_NFC_SETTINGS)
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                appContext.startActivity(intent)
+                result.success(null)
+            }
+
             else -> {
                 result.notImplemented()
             }
@@ -138,13 +245,48 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             context.registerReceiver(usbReceiver, IntentFilter(ACTION_USB_PERMISSION))
         }
         context.registerReceiver(usbReceiver, IntentFilter(UsbManager.ACTION_USB_DEVICE_DETACHED))
+
+        attachNfcActivity(binding.activity)
     }
 
-    override fun onDetachedFromActivityForConfigChanges() {}
+    override fun onDetachedFromActivityForConfigChanges() {
+        detachNfcActivity()
+    }
 
-    override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {}
+    override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
+        attachNfcActivity(binding.activity)
+    }
 
-    override fun onDetachedFromActivity() {}
+    override fun onDetachedFromActivity() {
+        detachNfcActivity()
+    }
+
+    private fun attachNfcActivity(activity: Activity) {
+        activityBinding = activity
+        nfcController.attachActivity(activity)
+        registerNfcStateReceiver()
+        if (nfcReaderModeRequested) nfcController.startReaderMode()
+    }
+
+    private fun detachNfcActivity() {
+        try {
+            context.unregisterReceiver(nfcStateReceiver)
+        } catch (e: IllegalArgumentException) {
+            // Not registered (e.g. onDetached without a matching attach); ignore.
+        }
+        nfcController.stopReaderMode()
+        nfcController.attachActivity(null)
+        activityBinding = null
+    }
+
+    private fun registerNfcStateReceiver() {
+        val filter = IntentFilter(NfcAdapter.ACTION_ADAPTER_STATE_CHANGED)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(nfcStateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            context.registerReceiver(nfcStateReceiver, filter)
+        }
+    }
 
     private fun listReaders(): List<String> {
         val readerTree = mutableMapOf<String, MutableList<Reader>>()
