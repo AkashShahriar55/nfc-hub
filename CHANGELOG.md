@@ -1,3 +1,38 @@
+## 0.6.0
+
+Built-in Android NFC support: `NfcHub().tagStream()` now emits `TagDriver`s
+from the device's own NFC antenna as well as from USB CCID readers, behind
+one API. The same driver methods (`readNdef`, `readSector`,
+`readWithoutEncryption`, etc.) work identically regardless of which source
+found the tag.
+
+* Add `NfcHub().tagStream({CcidSourceFilter? from})` -- a merged stream of
+  `TagDriver`s from every source (built-in NFC and every attached CCID/PC-SC
+  reader), or a single source when narrowed with `from`.
+* Add `NfcHub().readTag({CcidSourceFilter? from, Duration? timeout})` -- a
+  one-shot read: the first tag from any source (or a filtered source), with
+  an optional timeout.
+* Add `NfcHub().connectionState()` -- a stream of `CcidConnectionState`,
+  combining built-in-NFC availability (`NfcUnavailableReason`: `none` /
+  `noHardware` / `disabled`) with the live per-reader card presence
+  (`ExternalReaderState`) of every attached CCID/PC-SC reader.
+* Add `NfcHub().openNfcSettings()`, deep-linking to the system NFC settings
+  screen.
+* Add `CcidSourceFilter`, used with `tagStream`/`readTag` to restrict the
+  merged stream to `CcidSourceFilter.builtInNfc()` or
+  `CcidSourceFilter.reader(name)`.
+* CCID readers now auto-detect card insertion/removal via a poll loop, so a
+  reader feeds `tagStream()`/`connectionState()` on its own -- no manual
+  `connect()` call needed to discover a tag.
+* Add `identifyFromBackend(TransportBackend, {TagTechHint? hint})` and
+  `TagTechHint`, for advanced callers implementing their own
+  `TransportBackend` instead of going through a built-in source.
+* Android: the plugin now declares the `android.permission.NFC` permission
+  (with `android.hardware.nfc` as an optional `<uses-feature>`), needed for
+  the built-in-NFC source.
+* Unchanged: the CCID direct API (`listReaders()`, `connect()`,
+  `identifyTag()`) behaves exactly as in 0.5.0.
+
 ## 0.5.0
 
 **Internal:** tag drivers are now built on per-technology transport interfaces
