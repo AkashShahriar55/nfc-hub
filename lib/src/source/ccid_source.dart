@@ -93,6 +93,22 @@ const _probeApdu = 'FFCA000000';
 ///    the connection the emitted [TagDriver] was holding, and the next
 ///    tick's empty-handling can pick up a re-insertion.
 ///
+/// KNOWN LIMITATION (to be fixed as the first task of Plan 4, where the
+/// example app exercises this flow and gives a validation surface): [tags],
+/// [taggedTags], and [readerStates] share one listener count, and the
+/// connect/identify/emit path runs whenever ANY of them is listening. So if
+/// an app listens to [readerStates] (via `NfcHub.connectionState()`) BEFORE
+/// [tags] (via `NfcHub.tagStream()`), a card seated in that window is
+/// identified and added to the broadcast [tags] controller while nothing is
+/// listening -- broadcast controllers don't buffer, so it's dropped, the
+/// reader is now **occupied**, and it is never re-emitted until the card is
+/// physically removed and re-inserted. The plain "listen to tagStream() from
+/// the start" path is unaffected; only "monitor connectionState(), then read
+/// on demand" hits this, and only for CCID readers (persistent cards), not
+/// the phone's antenna. Fix direction: drive connect/identify/emit off the
+/// [tags]/[taggedTags] listeners specifically, or replay occupied readers'
+/// drivers to a late [tags] subscriber.
+///
 /// A reader that disappears from [NfcHubPlatform.listReaders] entirely
 /// (unplugged) is dropped from tracking outright, disconnecting first if it
 /// was occupied. [dispose] does the same for every still-occupied reader.
