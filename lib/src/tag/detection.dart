@@ -74,7 +74,7 @@ Future<TagDriver?> _identifyFromAtr(
         return Type2Tag(backend.type2());
       }
       if (c0 == 0xF0 && (c1 == 0x11 || c1 == 0x12)) {
-        return FelicaTag(card);
+        return FelicaTag(backend.nfcF());
       }
     }
   }
@@ -83,7 +83,7 @@ Future<TagDriver?> _identifyFromAtr(
   // above didn't produce a match (RID absent entirely, or its trailing
   // bytes were missing/unrecognized).
   if (historicalBytes.contains(0x11)) {
-    return FelicaTag(card);
+    return FelicaTag(backend.nfcF());
   }
   if (historicalBytes.contains(0x03)) {
     return Type2Tag(backend.type2());
@@ -156,7 +156,7 @@ Future<TagDriver> _identifyByProbing(
     log.add('MIFARE default-key auth -> failed: $e');
   }
 
-  final felica = FelicaTag(card);
+  final felica = FelicaTag(backend.nfcF());
   try {
     final idm = await felica.idm;
     log.add('FeliCa idm -> succeeded, idm=${hex.encode(idm)}');

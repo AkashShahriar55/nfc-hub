@@ -8,6 +8,8 @@
 /// As each driver is migrated onto its transport, add a group here for it.
 library;
 
+import 'dart:typed_data';
+
 import 'package:nfc_hub/nfc_hub.dart';
 import 'package:convert/convert.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -169,6 +171,64 @@ void main() {
           'FFB0000310',
         ]),
       );
+    });
+  });
+
+  group('FeliCa', () {
+    test(
+        'identifyTag() detects a FeliCa tag by ATR and the resulting driver '
+        'reads back a decoded block via a Read Without Encryption wrapped '
+        'in a PN532 InDataExchange command', () async {
+      // Real FeliCa 212K ATR from ACS's ACR122U NFC Reader API (section
+      // 7.3): shared RID A0 00 00 03 06, standard byte 0x03, card name
+      // F0 11 -- same ATR as test/tag/detection_test.dart's FeliCa case.
+      final atr = Uint8List.fromList([
+        0x3B, 0x8F, 0x80, 0x01, //
+        0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0xF0, 0x11,
+      ]);
+      final card = CcidCard('fake-reader', atr: atr);
+
+      const idmHex = 'AABBCCDDEE001122';
+      // idm is read via the standard PC/SC Get UID pseudo-APDU, which
+      // returns the FeliCa IDm on ACR-family readers.
+      const uidCapdu = 'FFCA000000';
+      const uidResponse = '${idmHex}9000';
+
+      // Read Without Encryption (cmd=06) for service code 0x220F, block 0:
+      // frame = 06 | idm(8) | numServices=01 | serviceCode LE (0F22) |
+      // numBlocks=01 | blockListElement(80,00) -> 15 bytes, length-prefixed
+      // to 16 bytes (leading byte 0x10), wrapped in D4 40 01 (PN532
+      // InDataExchange, target #1) -> 19-byte payload -> Lc=13.
+      const readCapdu =
+          'FF00000013D440011006AABBCCDDEE001122010F22018000';
+      // Response: D5 41 00 (InDataExchange success) + FeliCa response frame
+      // (29 bytes): len=1D, respCode=07, idm(8), SF1=00, SF2=00,
+      // numBlocks=01, block(16 bytes of 0xAA).
+      const readResponse = 'D541001D07AABBCCDDEE001122000001'
+          'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+          '9000';
+
+      final fake = _FakeCcidPlatform({
+        uidCapdu: uidResponse,
+        readCapdu: readResponse,
+      });
+      NfcHubPlatform.instance = fake;
+
+      final driver = await identifyTag(card);
+
+      expect(driver, isA<FelicaTag>());
+      final result =
+          await (driver as FelicaTag).readWithoutEncryption(0x220F, [0]);
+
+      expect(result.isSuccess, isTrue);
+      expect(result.blocks, hasLength(1));
+      expect(result.blocks[0], equals(List.filled(16, 0xAA)));
+
+      // Guards the wire format end to end: the driver's frame construction
+      // (command code, IDm, little-endian service code, block list) must
+      // survive being wrapped by the backend in the PN532 InDataExchange
+      // command (D4 40 01) exactly as a real ACR122U expects it.
+      expect(fake.requestedCapdus, contains(readCapdu));
     });
   });
 }
