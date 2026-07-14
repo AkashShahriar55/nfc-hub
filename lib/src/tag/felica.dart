@@ -101,6 +101,7 @@ class FelicaTag extends TagDriver {
   /// (community-sourced -- see [felicaModelName]), and every System Code
   /// on the card (best-effort -- a failure here doesn't prevent returning
   /// the rest of the info).
+  @override
   Future<FelicaInfo> readTagInfo() async {
     final cardIdm = await idm;
     final cardPmm = await pmm;

@@ -11,6 +11,11 @@ abstract class TagDriver {
   final CcidCard card;
 
   const TagDriver(this.card);
+
+  /// A generic identification summary for this tag: technology, UID, and
+  /// ATR where the transport supplies one. Concrete drivers return their
+  /// family-specific subtype (e.g. [Type2Tag] returns a `Type2TagInfo`).
+  Future<TagInfo> readTagInfo();
 }
 
 /// A generic identification summary common to every tag family, returned

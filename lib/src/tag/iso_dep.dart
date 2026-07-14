@@ -46,6 +46,7 @@ class IsoDepTag extends TagDriver {
   /// A generic identification summary. Attempts a DESFire `GetVersion`
   /// (best-effort -- most non-DESFire ISO14443-4 cards will fail this,
   /// which is expected and doesn't prevent returning the rest of the info).
+  @override
   Future<IsoDepInfo> readTagInfo() async {
     final target = await pollTypeA(card);
     final tagUid = target?.uid ?? Uint8List(0);

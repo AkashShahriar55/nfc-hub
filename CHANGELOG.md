@@ -11,6 +11,7 @@
   `NfcHubPlugin`. The method channel is named `nfc_hub`; the USB permission
   broadcast action is `com.cheqplease.nfchub.USB_PERMISSION`.
 - No functional changes: tag reading behaves exactly as in 0.3.0.
+- `TagDriver` now declares `readTagInfo()`, so callers no longer need to type-check the concrete driver to call it. Every existing driver already implemented it; this only makes the contract explicit.
 
 ## 0.3.0
 

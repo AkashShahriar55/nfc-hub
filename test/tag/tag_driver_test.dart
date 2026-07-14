@@ -3,6 +3,9 @@ import 'package:flutter_test/flutter_test.dart';
 
 class _TestDriver extends TagDriver {
   _TestDriver(super.card);
+
+  @override
+  Future<TagInfo> readTagInfo() => throw UnimplementedError();
 }
 
 void main() {

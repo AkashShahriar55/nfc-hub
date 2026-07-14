@@ -119,6 +119,7 @@ class MifareClassicTag extends TagDriver {
 
   /// A generic identification summary using the real SAK/ATQA read
   /// directly from the card via a PN532 poll, independent of the ATR.
+  @override
   Future<MifareClassicInfo> readTagInfo() async {
     final target = await pollTypeA(card);
     if (target == null) {

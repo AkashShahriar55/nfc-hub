@@ -28,6 +28,7 @@ class TypeBTag extends TagDriver {
 
   /// A generic identification summary. UID is the PUPI (bytes 1-4 of
   /// ATQB, per ISO14443-3's ATQB structure: `'50' | PUPI(4) | ...`).
+  @override
   Future<TypeBInfo> readTagInfo() async {
     return TypeBInfo(
       uid: Uint8List.sublistView(atqb, 1, 5),

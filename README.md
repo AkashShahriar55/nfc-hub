@@ -18,24 +18,9 @@ import 'package:nfc_hub/nfc_hub.dart';
 final nfcHub = NfcHub();
 final readers = await nfcHub.listReaders();
 final card = await nfcHub.connect(readers.first);
-final driver = await identifyTag(card);
 
-// `identifyTag` returns the concrete driver for whatever tag family it
-// found; narrow to it to call family-specific methods like readTagInfo().
-final TagInfo info;
-if (driver is Type2Tag) {
-  info = await driver.readTagInfo();
-} else if (driver is MifareClassicTag) {
-  info = await driver.readTagInfo();
-} else if (driver is FelicaTag) {
-  info = await driver.readTagInfo();
-} else if (driver is IsoDepTag) {
-  info = await driver.readTagInfo();
-} else if (driver is TypeBTag) {
-  info = await driver.readTagInfo();
-} else {
-  throw UnsupportedError('Unknown tag type');
-}
+final driver = await identifyTag(card);
+final info = await driver.readTagInfo();
 print(info.technology);
 ```
 

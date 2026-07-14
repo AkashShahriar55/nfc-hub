@@ -53,6 +53,7 @@ class Type2Tag extends TagDriver {
   /// A generic identification summary: UID, ATR, and the Capability
   /// Container if the tag has one (best-effort -- a read failure here
   /// doesn't prevent returning the rest of the info).
+  @override
   Future<Type2TagInfo> readTagInfo() async {
     final tagUid = await readUid();
     CapabilityContainer? cc;
