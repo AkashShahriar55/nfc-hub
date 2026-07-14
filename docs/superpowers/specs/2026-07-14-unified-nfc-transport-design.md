@@ -1,4 +1,4 @@
-# Unified NFC Transport: Built-in Android NFC + External CCID Readers
+# nfc_hub — Unified NFC Transport: Built-in Android NFC + External CCID Readers
 
 ## Context
 
@@ -52,7 +52,7 @@ but gains no built-in-NFC source).
 ## Architecture
 
 ```
-Ccid().tagStream() / readTag() / connectionState()
+NfcHub().tagStream() / readTag() / connectionState()
    ├─ AndroidNfcSource  (NfcAdapter.enableReaderMode → Tag → typed transports)
    └─ CcidSource        (USB CCID readers → poll loop → typed transports,
                          PN532/PC-SC pseudo-APDU wrapped)
@@ -129,10 +129,11 @@ handle: `IsoDep.transceive()`, `NfcA.transceive()`, `NfcF.transceive()`,
 (`TagLostException`) surfaces as a typed error and closes that tag's
 session.
 
-Channel shape: the existing `ccid` MethodChannel gains the new methods
-(`nfcStartReaderMode`, `nfcStopReaderMode`, `nfcTransceive`,
+Channel shape: a single `nfc_hub` MethodChannel carries the methods
+(`listReaders`/`connect`/`transceive`/`disconnect` from today, plus
+`nfcStartReaderMode`, `nfcStopReaderMode`, `nfcTransceive`,
 `nfcMifareAuth`, `nfcMifareReadBlock`, `getNfcState`,
-`openNfcSettings`), plus one EventChannel (`ccid/events`) for
+`openNfcSettings`), plus one EventChannel (`nfc_hub/events`) for
 discovery/removal/state-change events. One channel pair, not
 per-tag channels.
 
@@ -151,36 +152,53 @@ per-tag channels.
 
 One function, one dispatch table, no duplicated per-backend logic.
 
-### Layer 4: Public API (`lib/ccid.dart`)
+### Package rename: `ccid` → `nfc_hub`
+
+The plugin is renamed to reflect its new transport-neutral identity
+(the name `ccid` describes only one of the two transports):
+
+- pub.dev package name: `nfc_hub` (verified available).
+- Android package: `com.cheqplease.nfchub` (Kotlin sources move from
+  `im.nfc.ccid` to `com.cheqplease.nfchub`; plugin manifest, gradle
+  namespace, and pubspec `pluginClass` entry updated to match).
+- Dart entry point: `lib/nfc_hub.dart`; the primary class is `NfcHub`
+  (replacing `Ccid`). Public types drop the `Ccid` prefix:
+  `NfcHubConnectionState`, `NfcHubSourceFilter`, `TagSource`, etc.
+  Method channel names become `nfc_hub` / `nfc_hub/events`.
+- Repo homepage/repository fields in pubspec point at the new home.
+  This codebase derives from nfcim's `ccid` plugin; its LICENSE and
+  attribution are retained per its license terms.
+
+### Layer 4: Public API (`lib/nfc_hub.dart`)
 
 ```dart
-class Ccid {
+class NfcHub {
   /// Unified stream of identified tags from all sources.
   /// Listening starts reader-mode (built-in) and the CCID poll loop;
   /// cancelling the last listener stops both.
-  Stream<TagDriver> tagStream({CcidSourceFilter? from});
+  Stream<TagDriver> tagStream({NfcHubSourceFilter? from});
 
   /// First tag from any (or the filtered) source.
   /// Sugar over tagStream(from: from).first with a timeout.
-  Future<TagDriver> readTag({CcidSourceFilter? from, Duration? timeout});
+  Future<TagDriver> readTag({NfcHubSourceFilter? from, Duration? timeout});
 
   /// Connection/availability snapshots; fires on reader attach/detach,
   /// card insert/remove, and NFC radio toggle.
-  Stream<CcidConnectionState> connectionState();
+  Stream<NfcHubConnectionState> connectionState();
 
   /// Deep-link to the system NFC settings screen
   /// (Settings.ACTION_NFC_SETTINGS). Android only; no-op elsewhere.
   Future<void> openNfcSettings();
 }
 
-class CcidSourceFilter {
-  const CcidSourceFilter.builtInNfc();
-  const CcidSourceFilter.reader(String name);
+class NfcHubSourceFilter {
+  const NfcHubSourceFilter.builtInNfc();
+  const NfcHubSourceFilter.reader(String name);
 }
 
 enum NfcUnavailableReason { none, noHardware, disabled }
 
-class CcidConnectionState {
+class NfcHubConnectionState {
   final bool builtInNfcAvailable;
   final NfcUnavailableReason builtInNfcReason; // .none when available
   final List<ExternalReaderState> externalReaders;
@@ -199,7 +217,7 @@ to display it — informational only, never required.
 Minimal integration:
 
 ```dart
-await for (final tag in Ccid().tagStream()) {
+await for (final tag in NfcHub().tagStream()) {
   final info = await tag.readTagInfo();
   print(info.technology);
 }
@@ -208,7 +226,7 @@ await for (final tag in Ccid().tagStream()) {
 ### Card presence detection (external readers)
 
 Per attached CCID reader, a poll loop (default 500ms, configurable via
-`Ccid(pollInterval: ...)`):
+`NfcHub(pollInterval: ...)`):
 
 - **No card seated:** attempt `iccPowerOn()` each tick. Success → card
   present; emit connection-state update and run `identifyTag` → emit
@@ -232,7 +250,7 @@ detect tag departure.
   `NdefRecord` shape. `Type2Tag.readNdef()` over this backend delegates
   to it.
 - **CCID backend:** keep the current manual CC + page-walk + TLV parse
-  (`ccid_ndef.dart` is pure parsing and stays shared).
+  (the NDEF parsing module is pure Dart and stays shared).
 
 ### Error handling
 
@@ -254,7 +272,7 @@ detect tag departure.
 
 - `TagDriver` subclasses take typed transports instead of `CcidCard`.
 - `CcidCard`, `listReaders()`, `connect()` are absorbed into the CCID
-  backend as internals; `Ccid().tagStream()` is the entry point.
+  backend as internals; `NfcHub().tagStream()` is the entry point.
 - `identifyTag()` signature changes (transport bundle + hint).
 - `CcidPlatform` (platform_interface) is reshaped around the new
   backend seam.
