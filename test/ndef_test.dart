@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:ccid/ccid_ndef.dart';
+import 'package:nfc_hub/src/ndef.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

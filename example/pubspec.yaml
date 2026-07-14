@@ -1,5 +1,5 @@
-name: ccid_example
-description: "Demonstrates how to use the ccid plugin."
+name: nfc_hub_example
+description: "Demonstrates how to use the nfc_hub plugin."
 publish_to: 'none'
 
 environment:
@@ -8,7 +8,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  ccid:
+  nfc_hub:
     path: ../
   cupertino_icons: ^1.0.6
 

@@ -2,7 +2,7 @@ import 'dart:typed_data';
 
 import 'package:convert/convert.dart';
 
-import '../ccid.dart';
+import 'nfc_hub_base.dart';
 
 /// Strips the trailing 2-byte status word from [responseHex] and returns the
 /// data bytes, or null if the response is missing, too short, or the status

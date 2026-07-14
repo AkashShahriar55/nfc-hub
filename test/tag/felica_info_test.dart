@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:ccid/ccid_felica_info.dart';
+import 'package:nfc_hub/src/tag/felica_info.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

@@ -2,10 +2,10 @@ import 'dart:typed_data';
 
 import 'package:convert/convert.dart';
 
-import 'ccid_mifare_info.dart';
-import 'ccid_tag_driver.dart';
-import 'src/apdu.dart';
-import 'src/pn532.dart';
+import 'mifare_info.dart';
+import 'tag_driver.dart';
+import '../apdu.dart';
+import '../pn532.dart';
 
 /// Which MIFARE Classic key slot (A or B) to authenticate with.
 enum MifareKeyType { a, b }

@@ -2,8 +2,8 @@ import 'package:convert/convert.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-import 'ccid.dart';
-import 'ccid_platform_interface.dart';
+import '../nfc_hub_base.dart';
+import 'platform_interface.dart';
 
 /// An implementation of [CcidPlatform] that uses method channels.
 class MethodChannelCcid extends CcidPlatform {

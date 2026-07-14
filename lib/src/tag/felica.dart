@@ -2,9 +2,9 @@ import 'dart:typed_data';
 
 import 'package:convert/convert.dart';
 
-import 'ccid_felica_info.dart';
-import 'ccid_tag_driver.dart';
-import 'src/apdu.dart';
+import 'felica_info.dart';
+import 'tag_driver.dart';
+import '../apdu.dart';
 
 /// The parsed result of a FeliCa "Read Without Encryption" command.
 class FelicaReadResult {

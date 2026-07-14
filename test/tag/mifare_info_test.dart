@@ -1,4 +1,4 @@
-import 'package:ccid/ccid_mifare_info.dart';
+import 'package:nfc_hub/src/tag/mifare_info.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

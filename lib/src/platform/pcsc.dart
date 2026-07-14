@@ -3,8 +3,8 @@ import 'package:dart_pcsc/dart_pcsc.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-import 'ccid.dart';
-import 'ccid_platform_interface.dart';
+import '../nfc_hub_base.dart';
+import 'platform_interface.dart';
 
 /// An implementation of [CcidPlatform] that uses dart_pcsc.
 class PcscCcid extends CcidPlatform {

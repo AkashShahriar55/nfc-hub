@@ -1,4 +1,4 @@
-import 'package:ccid/ccid.dart';
+import 'package:nfc_hub/nfc_hub.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class _TestDriver extends TagDriver {

@@ -1,8 +1,8 @@
 import 'dart:typed_data';
 
-import 'package:ccid/ccid.dart';
-import 'package:ccid/ccid_platform_interface.dart';
-import 'package:ccid/src/apdu.dart';
+import 'package:nfc_hub/nfc_hub.dart';
+import 'package:nfc_hub/src/platform/platform_interface.dart';
+import 'package:nfc_hub/src/apdu.dart';
 import 'package:convert/convert.dart';
 import 'package:flutter_test/flutter_test.dart';
 

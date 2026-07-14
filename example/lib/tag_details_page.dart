@@ -1,4 +1,4 @@
-import 'package:ccid/ccid.dart';
+import 'package:nfc_hub/nfc_hub.dart';
 import 'package:flutter/material.dart';
 
 import 'mrt_transaction.dart';

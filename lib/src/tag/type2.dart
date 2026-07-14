@@ -1,9 +1,9 @@
 import 'dart:typed_data';
 
-import 'ccid_ndef.dart';
-import 'ccid_tag_driver.dart';
-import 'ccid_tag_info.dart';
-import 'src/apdu.dart';
+import '../ndef.dart';
+import 'tag_driver.dart';
+import 'tag_info.dart';
+import '../apdu.dart';
 
 class Type2TagInfo implements TagInfo {
   @override

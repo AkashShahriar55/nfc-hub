@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:ccid/ccid.dart';
+import 'package:nfc_hub/nfc_hub.dart';
 
 import 'tag_details_page.dart';
 

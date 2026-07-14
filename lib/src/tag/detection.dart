@@ -2,15 +2,15 @@ import 'dart:typed_data';
 
 import 'package:convert/convert.dart';
 
-import 'ccid.dart' show CcidCard;
-import 'ccid_felica.dart';
-import 'ccid_iso_b.dart';
-import 'ccid_iso_dep.dart';
-import 'ccid_mifare_classic.dart';
-import 'ccid_tag_driver.dart';
-import 'ccid_type2.dart';
-import 'src/apdu.dart';
-import 'src/pn532.dart';
+import '../nfc_hub_base.dart' show CcidCard;
+import 'felica.dart';
+import 'iso_b.dart';
+import 'iso_dep.dart';
+import 'mifare_classic.dart';
+import 'tag_driver.dart';
+import 'type2.dart';
+import '../apdu.dart';
+import '../pn532.dart';
 
 /// Identifies the tag family of the card connected through [card] and
 /// returns the matching typed driver.

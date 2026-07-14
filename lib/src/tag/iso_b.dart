@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'ccid_tag_driver.dart';
+import 'tag_driver.dart';
 
 class TypeBInfo implements TagInfo {
   @override

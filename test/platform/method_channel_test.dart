@@ -1,4 +1,4 @@
-import 'package:ccid/ccid_method_channel.dart';
+import 'package:nfc_hub/src/platform/method_channel.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

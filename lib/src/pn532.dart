@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import '../ccid.dart' show CcidCard;
+import 'nfc_hub_base.dart' show CcidCard;
 import 'apdu.dart';
 
 /// A Type A target found by [pollTypeA], with its real ATQA/SAK/UID read

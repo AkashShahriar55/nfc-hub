@@ -1,5 +1,5 @@
-import 'package:ccid/ccid.dart';
-import 'package:ccid/ccid_platform_interface.dart';
+import 'package:nfc_hub/nfc_hub.dart';
+import 'package:nfc_hub/src/platform/platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class _FakeCcidPlatform extends CcidPlatform {

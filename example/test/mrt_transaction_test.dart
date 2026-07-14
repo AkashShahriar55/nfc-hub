@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
-import 'package:ccid_example/mrt_stations.dart';
-import 'package:ccid_example/mrt_transaction.dart';
+import 'package:nfc_hub_example/mrt_stations.dart';
+import 'package:nfc_hub_example/mrt_transaction.dart';
 import 'package:convert/convert.dart';
 import 'package:flutter_test/flutter_test.dart';
 

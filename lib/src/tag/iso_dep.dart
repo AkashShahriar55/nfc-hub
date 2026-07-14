@@ -2,11 +2,9 @@ import 'dart:typed_data';
 
 import 'package:convert/convert.dart';
 
-import 'ccid_desfire_info.dart';
-import 'ccid_tag_driver.dart';
-import 'src/pn532.dart';
-
-export 'ccid_desfire_info.dart' show DesfireVersion;
+import 'desfire_info.dart';
+import 'tag_driver.dart';
+import '../pn532.dart';
 
 class IsoDepInfo implements TagInfo {
   @override

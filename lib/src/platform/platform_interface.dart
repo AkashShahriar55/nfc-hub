@@ -2,9 +2,9 @@ import 'package:flutter/foundation.dart';
 import 'package:platform_detector/platform_detector.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
-import 'ccid.dart';
-import 'ccid_method_channel.dart';
-import 'ccid_pcsc.dart';
+import '../nfc_hub_base.dart';
+import 'method_channel.dart';
+import 'pcsc.dart';
 
 abstract class CcidPlatform extends PlatformInterface {
   /// Constructs a CcidPlatform.

@@ -5,7 +5,7 @@
 import FlutterMacOS
 import Foundation
 
-import ccid
+import nfc_hub
 
 func RegisterGeneratedPlugins(registry: FlutterPluginRegistry) {
   CcidPlugin.register(with: registry.registrar(forPlugin: "CcidPlugin"))
