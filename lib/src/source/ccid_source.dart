@@ -1,0 +1,266 @@
+import 'dart:async';
+import 'dart:developer' as developer;
+
+import '../nfc_hub_base.dart';
+import '../platform/platform_interface.dart';
+import '../tag/detection.dart';
+import '../tag/tag_driver.dart';
+import 'tag_source.dart';
+
+/// A CCID/PC-SC reader's card-presence state, as tracked by [CcidSource]'s
+/// poll loop and surfaced to Task 7's unified connection-state stream.
+class ExternalReaderState {
+  /// The reader's name, exactly as reported by [NfcHubPlatform.listReaders].
+  final String name;
+
+  /// Whether a card is currently seated in this reader.
+  final bool cardPresent;
+
+  const ExternalReaderState(this.name, this.cardPresent);
+
+  @override
+  bool operator ==(Object other) =>
+      other is ExternalReaderState &&
+      other.name == name &&
+      other.cardPresent == cardPresent;
+
+  @override
+  int get hashCode => Object.hash(name, cardPresent);
+
+  @override
+  String toString() =>
+      'ExternalReaderState($name, cardPresent: $cardPresent)';
+}
+
+/// Whether a tracked reader currently has no card seated ([empty]), or has
+/// a card connected and already identified ([occupied]).
+enum _ReaderStatus { empty, occupied }
+
+/// PC/SC Part 3 "Get Data" (Get UID) pseudo-APDU. Reused here purely as a
+/// liveness probe for an already-[_ReaderStatus.occupied] reader -- any
+/// contactless storage card answers it, so a throw/failure is a reliable
+/// signal that the card was pulled. (This is the same pseudo-APDU
+/// [CcidTransportBackend]'s `Type2Transport.readUid` and `NfcFTransport.idm`
+/// use for an actual UID read; here only success/failure matters.)
+const _probeApdu = 'FFCA000000';
+
+/// Turns the CCID/PC-SC readers [NfcHubPlatform] can see into a stream of
+/// identified [TagDriver]s -- the same shape [AndroidNfcSource] gives the
+/// phone's built-in antenna -- so Task 7 can merge both into one unified
+/// stream.
+///
+/// Unlike the phone's antenna, CCID readers expose no discovery/interrupt
+/// callback through this plugin's platform surface -- only
+/// [NfcHubPlatform.listReaders]/[NfcHubPlatform.connect]/
+/// [NfcHubPlatform.transceive]. So [CcidSource] drives a [Timer.periodic]
+/// that repeatedly polls every attached reader, tracking a per-reader state
+/// machine:
+///
+///  - **empty**: attempts [NfcHubPlatform.connect]. Success means a card
+///    was just seated -- the reader moves to **occupied**, the card is
+///    identified via [identifyTag], and the resulting driver is emitted on
+///    [tags]. A throw means still no card -- stays **empty**, nothing
+///    emitted.
+///  - **occupied**: sends the harmless [_probeApdu] via
+///    [NfcHubPlatform.transceive] as a liveness check. Success means the
+///    same card is still seated -- nothing is re-emitted (a card that stays
+///    put emits exactly once). A throw means the card was removed -- the
+///    reader moves back to **empty** so the next tick's empty-handling can
+///    pick up a re-insertion.
+///
+/// A reader that disappears from [NfcHubPlatform.listReaders] entirely
+/// (unplugged) is dropped from tracking outright.
+///
+/// The loop only runs while [tags] or [readerStates] has a listener --
+/// mirroring [AndroidNfcSource]'s onListen/onCancel gating -- so nothing
+/// stays "hot" (USB traffic, and on real hardware, the user-facing
+/// permission prompt triggered by [NfcHubPlatform.connect] -- see the
+/// warning on [CcidSource] itself) with nobody consuming it.
+///
+/// On Android, [NfcHubPlatform.connect] surfaces the OS's USB accessory
+/// permission dialog the first time a given reader is seen, since it opens
+/// the USB device. Because the empty-reader branch above calls `connect`
+/// once per poll tick for every reader with no card seated, a reader that
+/// is attached but *never* has a card in it, or a user who dismisses the
+/// dialog, causes that prompt to reappear on a future tick. There is no way
+/// to probe "is a card present" without this connect side effect through
+/// the current plugin API -- that trade-off is inherent to this design and
+/// cannot be exercised by these pure-Dart tests, only on real hardware.
+class CcidSource implements TagSource {
+  CcidSource(
+    this._platform, {
+    this.pollInterval = const Duration(milliseconds: 500),
+  });
+
+  final NfcHubPlatform _platform;
+  final Duration pollInterval;
+
+  StreamController<TagDriver>? _tagsController;
+  StreamController<List<ExternalReaderState>>? _statesController;
+  Timer? _timer;
+  int _listenerCount = 0;
+  bool _ticking = false;
+
+  final Map<String, _ReaderStatus> _status = {};
+
+  @override
+  Stream<TagDriver> tags() {
+    return (_tagsController ??= StreamController<TagDriver>.broadcast(
+      onListen: _onListen,
+      onCancel: _onCancel,
+    ))
+        .stream;
+  }
+
+  /// The current per-reader `{name, cardPresent}` list, re-emitted whenever
+  /// it changes: a reader attaches/detaches, or a card is inserted/removed.
+  /// Consumed by Task 7's unified connection-state stream.
+  Stream<List<ExternalReaderState>> readerStates() {
+    return (_statesController ??=
+            StreamController<List<ExternalReaderState>>.broadcast(
+      onListen: _onListen,
+      onCancel: _onCancel,
+    ))
+        .stream;
+  }
+
+  void _onListen() {
+    _listenerCount++;
+    if (_listenerCount == 1) {
+      _timer = Timer.periodic(pollInterval, (_) => unawaited(_tick()));
+    }
+  }
+
+  void _onCancel() {
+    _listenerCount--;
+    if (_listenerCount <= 0) {
+      _listenerCount = 0;
+      _timer?.cancel();
+      _timer = null;
+    }
+  }
+
+  Future<void> _tick() async {
+    // A previous tick may still be in flight (e.g. a slow connect()) --
+    // never run two ticks concurrently against the same reader state.
+    if (_ticking) return;
+    _ticking = true;
+    try {
+      await _pollOnce();
+    } catch (error, stackTrace) {
+      // Never let one bad poll tear down the timer -- log and try again
+      // next tick, mirroring AndroidNfcSource's per-discovery isolation.
+      developer.log(
+        'CcidSource poll tick failed: $error',
+        name: 'nfc_hub.CcidSource',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    } finally {
+      _ticking = false;
+    }
+  }
+
+  Future<void> _pollOnce() async {
+    List<String> readers;
+    try {
+      readers = await _platform.listReaders();
+    } catch (error, stackTrace) {
+      developer.log(
+        'listReaders() failed: $error',
+        name: 'nfc_hub.CcidSource',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return;
+    }
+
+    final readerSet = readers.toSet();
+    var changed = false;
+
+    // Drop tracking for readers that vanished (unplugged) since last tick.
+    final vanished =
+        _status.keys.where((r) => !readerSet.contains(r)).toList();
+    for (final reader in vanished) {
+      _status.remove(reader);
+      changed = true;
+    }
+
+    // Start tracking newly-seen readers as empty.
+    for (final reader in readers) {
+      if (!_status.containsKey(reader)) {
+        _status[reader] = _ReaderStatus.empty;
+        changed = true;
+      }
+    }
+
+    for (final reader in readers) {
+      final status = _status[reader];
+      if (status == _ReaderStatus.empty) {
+        if (await _tryConnect(reader)) changed = true;
+      } else if (status == _ReaderStatus.occupied) {
+        if (!await _probeStillPresent(reader)) changed = true;
+      }
+    }
+
+    if (changed) _emitStates();
+  }
+
+  /// Attempts to connect an **empty** reader. Returns true (and emits a
+  /// [TagDriver]) if a card was just seated; false if the reader is still
+  /// empty.
+  Future<bool> _tryConnect(String reader) async {
+    final CcidCard card;
+    try {
+      card = await _platform.connect(reader);
+    } catch (_) {
+      return false; // No card seated yet -- stays empty, nothing to report.
+    }
+
+    _status[reader] = _ReaderStatus.occupied;
+    try {
+      final driver = await identifyTag(card);
+      _tagsController?.add(driver);
+    } catch (error, stackTrace) {
+      // Connected but couldn't identify the card -- keep the reader marked
+      // occupied (a card IS physically seated); log and move on, same as
+      // AndroidNfcSource does for one bad discovery.
+      developer.log(
+        'Failed to identify tag on reader "$reader": $error',
+        name: 'nfc_hub.CcidSource',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+    return true;
+  }
+
+  /// Probes an **occupied** reader for continued card presence. Returns
+  /// true if the card is still there; false (and flips the reader back to
+  /// empty) if the probe failed, meaning the card was removed.
+  Future<bool> _probeStillPresent(String reader) async {
+    try {
+      await _platform.transceive(reader, _probeApdu);
+      return true;
+    } catch (_) {
+      _status[reader] = _ReaderStatus.empty;
+      return false;
+    }
+  }
+
+  void _emitStates() {
+    final states = [
+      for (final entry in _status.entries)
+        ExternalReaderState(entry.key, entry.value == _ReaderStatus.occupied),
+    ];
+    _statesController?.add(states);
+  }
+
+  @override
+  Future<void> dispose() async {
+    _timer?.cancel();
+    _timer = null;
+    await _tagsController?.close();
+    await _statesController?.close();
+  }
+}
