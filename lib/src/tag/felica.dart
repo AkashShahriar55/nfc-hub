@@ -5,6 +5,7 @@ import 'package:convert/convert.dart';
 import 'felica_info.dart';
 import 'tag_driver.dart';
 import '../apdu.dart';
+import '../nfc_hub_base.dart';
 
 /// The parsed result of a FeliCa "Read Without Encryption" command.
 class FelicaReadResult {
@@ -54,7 +55,9 @@ class FelicaInfo implements TagInfo {
 /// Tags"): `FF 00 00 00 <Lc> D4 40 01 <FeliCa command>`, response
 /// `D5 41 <status> <FeliCa response>`.
 class FelicaTag extends TagDriver {
-  FelicaTag(super.card);
+  final CcidCard card;
+
+  FelicaTag(this.card);
 
   Uint8List? _idm;
   Uint8List? _pmm;

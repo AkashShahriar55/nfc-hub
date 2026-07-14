@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import '../nfc_hub_base.dart';
 import 'tag_driver.dart';
 
 class TypeBInfo implements TagInfo {
@@ -20,9 +21,10 @@ class TypeBInfo implements TagInfo {
 /// those). Exposes the card's ATQB plus raw ISO7816 APDU passthrough,
 /// mirroring [IsoDepTag]'s shape.
 class TypeBTag extends TagDriver {
+  final CcidCard card;
   final Uint8List atqb;
 
-  TypeBTag(super.card, this.atqb);
+  TypeBTag(this.card, this.atqb);
 
   Future<String?> transceive(String capdu) => card.transceive(capdu);
 

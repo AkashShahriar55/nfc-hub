@@ -1,16 +1,14 @@
 import 'dart:typed_data';
 
-import '../nfc_hub_base.dart';
-
 /// Base class for tag-family-specific drivers returned by [identifyTag]
 /// (see `detection.dart`).
 ///
-/// Each driver wraps a connected [CcidCard] and exposes only the read
-/// operations that make sense for that tag family.
+/// Each driver wraps a typed transport (see `../transport/transport.dart`)
+/// and exposes only the read operations that make sense for that tag
+/// family. Drivers are transport-agnostic: the same driver serves a card on
+/// a USB CCID reader and (from Plan 3) a tag on the device's own antenna.
 abstract class TagDriver {
-  final CcidCard card;
-
-  const TagDriver(this.card);
+  const TagDriver();
 
   /// A generic identification summary for this tag: technology, UID, and
   /// ATR where the transport supplies one. Concrete drivers return their

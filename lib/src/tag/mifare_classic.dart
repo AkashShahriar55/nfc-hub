@@ -5,6 +5,7 @@ import 'package:convert/convert.dart';
 import 'mifare_info.dart';
 import 'tag_driver.dart';
 import '../apdu.dart';
+import '../nfc_hub_base.dart';
 import '../pn532.dart';
 
 /// Which MIFARE Classic key slot (A or B) to authenticate with.
@@ -49,7 +50,9 @@ class MifareClassicInfo implements TagInfo {
 /// cipher itself; this driver only sends the PC/SC "Load Keys" and "General
 /// Authenticate" pseudo-APDUs (PC/SC Part 3).
 class MifareClassicTag extends TagDriver {
-  MifareClassicTag(super.card);
+  final CcidCard card;
+
+  MifareClassicTag(this.card);
 
   static const List<String> _defaultKeysHex = [
     'FFFFFFFFFFFF',

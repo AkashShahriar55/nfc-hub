@@ -4,6 +4,7 @@ import 'package:convert/convert.dart';
 
 import 'desfire_info.dart';
 import 'tag_driver.dart';
+import '../nfc_hub_base.dart';
 import '../pn532.dart';
 
 class IsoDepInfo implements TagInfo {
@@ -30,7 +31,9 @@ class IsoDepInfo implements TagInfo {
 /// This driver only provides raw ISO 7816-4 SELECT + APDU transport; it has
 /// no knowledge of any particular card's application/file model.
 class IsoDepTag extends TagDriver {
-  IsoDepTag(super.card);
+  final CcidCard card;
+
+  IsoDepTag(this.card);
 
   /// Sends a SELECT (by name/AID) command for [aidHex] (hex-encoded
   /// Application Identifier), returning the response APDU.

@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import '../ndef.dart';
+import '../nfc_hub_base.dart';
 import 'tag_driver.dart';
 import 'tag_info.dart';
 import '../apdu.dart';
@@ -25,7 +26,9 @@ class Type2TagInfo implements TagInfo {
 /// Driver for an NFC Forum Type 2 Tag (e.g. NTAG213/215/216, Mifare
 /// Ultralight) connected through a contactless PC/SC reader.
 class Type2Tag extends TagDriver {
-  Type2Tag(super.card);
+  final CcidCard card;
+
+  Type2Tag(this.card);
 
   /// Reads the NDEF message from the tag.
   ///
