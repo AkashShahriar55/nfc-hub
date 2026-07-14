@@ -56,6 +56,38 @@ void main() {
     expect(args['data'], Uint8List.fromList([0x00, 0xA4, 0x04, 0x00, 0x00]));
   });
 
+  test(
+      'transceive normalizes a List<int> response (not just a Uint8List) '
+      'into a Uint8List', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(method, (call) async {
+      log.add(call);
+      // Simulate a Kotlin side that returns a generic int list (e.g. via
+      // byteArray.toList()) rather than a native ByteArray. invokeMethod's
+      // own internal generic cast must not choke on this before _bytes()
+      // gets a chance to normalize it.
+      return <int>[0x6F, 0x00];
+    });
+    final m = AndroidNfcManager();
+    addTearDown(m.dispose);
+    final r = await m.transceive(
+        7, 'IsoDep', Uint8List.fromList([0x00, 0xA4, 0x04, 0x00, 0x00]));
+    expect(r, isA<Uint8List>());
+    expect(r, Uint8List.fromList([0x6F, 0x00]));
+  });
+
+  test('transceive throws a clear error when the platform returns null',
+      () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(method, (call) async => null);
+    final m = AndroidNfcManager();
+    addTearDown(m.dispose);
+    await expectLater(
+      () => m.transceive(7, 'IsoDep', Uint8List.fromList([0x00])),
+      throwsA(isA<StateError>()),
+    );
+  });
+
   test('mifareAuthenticate forwards handle/sector/keyA/key', () async {
     final m = AndroidNfcManager();
     addTearDown(m.dispose);
@@ -80,6 +112,21 @@ void main() {
     final args = log.single.arguments as Map;
     expect(args['handle'], 3);
     expect(args['block'], 8);
+  });
+
+  test(
+      'mifareReadBlock normalizes a List<int> response into a Uint8List',
+      () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(method, (call) async {
+      log.add(call);
+      return List<int>.filled(16, 0xCD);
+    });
+    final m = AndroidNfcManager();
+    addTearDown(m.dispose);
+    final r = await m.mifareReadBlock(3, 8);
+    expect(r, isA<Uint8List>());
+    expect(r, Uint8List.fromList(List.filled(16, 0xCD)));
   });
 
   test('startReaderMode/stopReaderMode call the expected methods', () async {
@@ -220,6 +267,76 @@ void main() {
     sink!.success({'type': 'nfcStateChanged', 'state': 'disabled'});
 
     expect(await future, NfcState.disabled);
+  });
+
+  test(
+      'a malformed tagDiscovered event surfaces as an error on discoveries '
+      'and the underlying subscription survives to deliver the next event',
+      () async {
+    final m = AndroidNfcManager();
+    addTearDown(m.dispose);
+    await pumpEventQueue();
+
+    final errors = <Object>[];
+    final sub =
+        m.discoveries.listen((_) {}, onError: (Object e) => errors.add(e));
+    addTearDown(sub.cancel);
+
+    // Missing `handle` -- decoding throws synchronously inside _onEvent.
+    sink!.success({
+      'type': 'tagDiscovered',
+      'techList': ['IsoDep'],
+      'uid': [0x01],
+    });
+    await pumpEventQueue();
+    expect(errors, hasLength(1));
+
+    // The single underlying subscription must survive: a subsequent
+    // well-formed event is still delivered.
+    final future = m.discoveries.first;
+    sink!.success({
+      'type': 'tagDiscovered',
+      'handle': 99,
+      'techList': ['IsoDep'],
+      'uid': [0x02],
+    });
+    final discovery = await future;
+    expect(discovery.handle, 99);
+  });
+
+  test(
+      'a malformed event whose type cannot even be read fans out an error '
+      'to all three streams', () async {
+    final m = AndroidNfcManager();
+    addTearDown(m.dispose);
+    await pumpEventQueue();
+
+    final discoveryErrors = <Object>[];
+    final lossErrors = <Object>[];
+    final stateErrors = <Object>[];
+    addTearDown(m.discoveries
+        .listen((_) {}, onError: (Object e) => discoveryErrors.add(e))
+        .cancel);
+    addTearDown(m.tagLosses
+        .listen((_) {}, onError: (Object e) => lossErrors.add(e))
+        .cancel);
+    addTearDown(m.nfcStateChanges
+        .listen((_) {}, onError: (Object e) => stateErrors.add(e))
+        .cancel);
+
+    // Not even a Map -- the `event as Map` cast throws before `type` can be
+    // read, so this must fan out like _onEventError does.
+    sink!.success('not a map');
+    await pumpEventQueue();
+
+    expect(discoveryErrors, hasLength(1));
+    expect(lossErrors, hasLength(1));
+    expect(stateErrors, hasLength(1));
+
+    // The underlying subscription must still survive this too.
+    final future = m.tagLosses.first;
+    sink!.success({'type': 'tagLost', 'handle': 7});
+    expect(await future, 7);
   });
 
   test('a single event-channel subscription fans out to all three streams',

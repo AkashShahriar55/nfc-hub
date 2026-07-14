@@ -122,14 +122,35 @@ class AndroidNfcManager {
   Stream<NfcState> get nfcStateChanges => _nfcStateChangesController.stream;
 
   void _onEvent(Object? event) {
-    final map = (event as Map).cast<Object?, Object?>();
-    switch (map['type']) {
-      case 'tagDiscovered':
-        _discoveriesController.add(_discoveryFromWire(map));
-      case 'tagLost':
-        _tagLossesController.add(map['handle'] as int);
-      case 'nfcStateChanged':
-        _nfcStateChangesController.add(_nfcStateFromWire(map['state'] as String));
+    Object? type;
+    try {
+      final map = (event as Map).cast<Object?, Object?>();
+      type = map['type'];
+      switch (type) {
+        case 'tagDiscovered':
+          _discoveriesController.add(_discoveryFromWire(map));
+        case 'tagLost':
+          _tagLossesController.add(map['handle'] as int);
+        case 'nfcStateChanged':
+          _nfcStateChangesController
+              .add(_nfcStateFromWire(map['state'] as String));
+      }
+    } catch (error, stackTrace) {
+      // A malformed event must not tear down the single underlying
+      // subscription -- surface it as a stream error instead, so later
+      // well-formed events keep flowing.
+      switch (type) {
+        case 'tagDiscovered':
+          _discoveriesController.addError(error, stackTrace);
+        case 'tagLost':
+          _tagLossesController.addError(error, stackTrace);
+        case 'nfcStateChanged':
+          _nfcStateChangesController.addError(error, stackTrace);
+        default:
+          // The type itself couldn't be read (or is otherwise unknown):
+          // fan out to all three streams, matching _onEventError.
+          _onEventError(error, stackTrace);
+      }
     }
   }
 
@@ -142,12 +163,18 @@ class AndroidNfcManager {
   /// Sends raw command bytes to the tag identified by [handle] over the
   /// given Android tech ([tech], e.g. `IsoDep`) and returns the response.
   Future<Uint8List> transceive(int handle, String tech, Uint8List data) async {
-    final result = await _method.invokeMethod<Uint8List>('nfcTransceive', {
+    // Use Object? (not Uint8List) so a Kotlin side that returns a generic
+    // int list instead of a ByteArray doesn't crash inside invokeMethod's
+    // own internal cast, before _bytes() gets a chance to normalize it.
+    final result = await _method.invokeMethod<Object?>('nfcTransceive', {
       'handle': handle,
       'tech': tech,
       'data': data,
     });
-    return _bytes(result as Object);
+    if (result == null) {
+      throw StateError('nfcTransceive returned null');
+    }
+    return _bytes(result);
   }
 
   /// Authenticates a MIFARE Classic sector with a key A/B.
@@ -163,11 +190,16 @@ class AndroidNfcManager {
 
   /// Reads a single MIFARE Classic block after authentication.
   Future<Uint8List> mifareReadBlock(int handle, int block) async {
-    final result = await _method.invokeMethod<Uint8List>('nfcMifareReadBlock', {
+    // See transceive() above for why this is Object? rather than Uint8List.
+    final result =
+        await _method.invokeMethod<Object?>('nfcMifareReadBlock', {
       'handle': handle,
       'block': block,
     });
-    return _bytes(result as Object);
+    if (result == null) {
+      throw StateError('nfcMifareReadBlock returned null');
+    }
+    return _bytes(result);
   }
 
   /// Starts Android reader mode, enabling tag discovery events.
