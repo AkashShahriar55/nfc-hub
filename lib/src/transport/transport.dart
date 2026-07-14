@@ -32,8 +32,11 @@ abstract class Type2Transport {
   /// 16 bytes (4 pages) starting at [startPage].
   Future<Uint8List> readPages(int startPage);
 
-  /// The NXP `GET_VERSION` (0x60) response, or null where the reader or
-  /// tag doesn't support it. Must not throw for the unsupported case.
+  /// The NXP `GET_VERSION` (0x60) response: **exactly 8 bytes, or null**.
+  ///
+  /// Implementations MUST NOT throw, and MUST NOT return a non-null array of
+  /// any other length — `Type2Tag.readChipVersion()` parses the result without
+  /// a length guard and is documented as never throwing, so it relies on this.
   Future<Uint8List?> getVersion();
 }
 
