@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:convert/convert.dart';
 
 import '../nfc_hub_base.dart' show CcidCard;
+import '../transport/ccid_backend.dart';
 import 'felica.dart';
 import 'iso_b.dart';
 import 'iso_dep.dart';
@@ -24,15 +25,16 @@ import '../pn532.dart';
 /// probe that was tried, so a caller displaying `toString()` on-screen has
 /// enough to diagnose a detection failure without separate log access.
 Future<TagDriver> identifyTag(CcidCard card) async {
+  final backend = CcidTransportBackend(card);
   final atr = card.atr;
   if (atr != null) {
-    final fromAtr = _identifyFromAtr(card, atr);
+    final fromAtr = _identifyFromAtr(card, backend, atr);
     if (fromAtr != null) return fromAtr;
   }
-  return _identifyByProbing(card, atr);
+  return _identifyByProbing(card, backend, atr);
 }
 
-TagDriver? _identifyFromAtr(CcidCard card, Uint8List atr) {
+TagDriver? _identifyFromAtr(CcidCard card, CcidTransportBackend backend, Uint8List atr) {
   if (atr.length < 5) return null;
   final historicalBytes = atr.sublist(4);
 
@@ -60,7 +62,7 @@ TagDriver? _identifyFromAtr(CcidCard card, Uint8List atr) {
         return MifareClassicTag(card);
       }
       if (c0 == 0x00 && c1 == 0x03) {
-        return Type2Tag(card);
+        return Type2Tag(backend.type2());
       }
       if (c0 == 0xF0 && (c1 == 0x11 || c1 == 0x12)) {
         return FelicaTag(card);
@@ -75,7 +77,7 @@ TagDriver? _identifyFromAtr(CcidCard card, Uint8List atr) {
     return FelicaTag(card);
   }
   if (historicalBytes.contains(0x03)) {
-    return Type2Tag(card);
+    return Type2Tag(backend.type2());
   }
   // A real ATS-derived ATR (not a PC/SC Part 3 synchronous-card pseudo-ATR)
   // with none of the above markers: treat as a generic processor card.
@@ -115,7 +117,8 @@ Future<String?> _tryTransceive(CcidCard card, String capdu) async {
 /// pseudo-APDU (built for ISO14443-A) doesn't stop the MIFARE or FeliCa
 /// probes from running, since FeliCa in particular is a different RF
 /// technology (NFC-F) that isn't expected to answer it.
-Future<TagDriver> _identifyByProbing(CcidCard card, Uint8List? atr) async {
+Future<TagDriver> _identifyByProbing(
+    CcidCard card, CcidTransportBackend backend, Uint8List? atr) async {
   final log = <String>[
     atr == null ? 'atr=none' : 'atr=${hex.encode(atr)} (no known pattern)',
   ];
@@ -127,7 +130,7 @@ Future<TagDriver> _identifyByProbing(CcidCard card, Uint8List? atr) async {
   final ccData = stripAndCheckSw(ccResponse);
   log.add('Read CC -> ${ccResponse ?? 'no response'}');
   if (ccData != null && ccData.length == 4 && ccData[0] == 0xE1) {
-    return Type2Tag(card);
+    return Type2Tag(backend.type2());
   }
 
   final selectResponse = await _tryTransceive(card, '00A4040000');

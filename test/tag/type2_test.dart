@@ -1,38 +1,38 @@
+import 'dart:typed_data';
+
 import 'package:nfc_hub/nfc_hub.dart';
-import 'package:convert/convert.dart';
+import 'package:nfc_hub/src/transport/transport.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-class _FakeCcidPlatform extends NfcHubPlatform {
-  final Map<String, String?> responses;
+class _FakeType2Transport implements Type2Transport {
+  _FakeType2Transport({this.uid, this.cc});
 
-  _FakeCcidPlatform(this.responses);
-
-  @override
-  Future<String?> transceive(String reader, String capdu) async =>
-      responses[capdu];
+  final Uint8List? uid;
+  final Uint8List? cc;
 
   @override
-  Future<List<String>> listReaders() async => ['fake-reader'];
+  Future<Uint8List> readUid() async =>
+      uid ?? (throw Exception('no uid scripted'));
 
   @override
-  Future<CcidCard> connect(String reader) async => CcidCard(reader);
+  Future<Uint8List> readCapabilityContainer() async =>
+      cc ?? (throw Exception('no CC scripted'));
 
   @override
-  Future<void> disconnect(String reader) async {}
+  Future<Uint8List> readPages(int startPage) async =>
+      throw Exception('page $startPage not scripted');
+
+  @override
+  Future<Uint8List?> getVersion() async => null;
 }
 
 void main() {
-  tearDown(() {
-    NfcHubPlatform.instance = null;
-  });
-
   test('readTagInfo() returns UID and the parsed Capability Container',
       () async {
-    NfcHubPlatform.instance = _FakeCcidPlatform({
-      'FFCA000000': '${hex.encode([0x04, 0x01, 0x02, 0x03])}9000',
-      'FFB0000304': 'E11006009000',
-    });
-    final tag = Type2Tag(CcidCard('fake-reader'));
+    final tag = Type2Tag(_FakeType2Transport(
+      uid: Uint8List.fromList([0x04, 0x01, 0x02, 0x03]),
+      cc: Uint8List.fromList([0xE1, 0x10, 0x06, 0x00]),
+    ));
 
     final info = await tag.readTagInfo();
 

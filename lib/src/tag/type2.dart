@@ -1,10 +1,9 @@
 import 'dart:typed_data';
 
 import '../ndef.dart';
-import '../nfc_hub_base.dart';
+import '../transport/transport.dart';
 import 'tag_driver.dart';
 import 'tag_info.dart';
-import '../apdu.dart';
 
 class Type2TagInfo implements TagInfo {
   @override
@@ -26,9 +25,9 @@ class Type2TagInfo implements TagInfo {
 /// Driver for an NFC Forum Type 2 Tag (e.g. NTAG213/215/216, Mifare
 /// Ultralight) connected through a contactless PC/SC reader.
 class Type2Tag extends TagDriver {
-  final CcidCard card;
+  final Type2Transport transport;
 
-  Type2Tag(this.card);
+  const Type2Tag(this.transport);
 
   /// Reads the NDEF message from the tag.
   ///
@@ -49,9 +48,7 @@ class Type2Tag extends TagDriver {
   }
 
   /// Reads the tag's UID via the standard PC/SC "Get Data" pseudo-APDU.
-  Future<Uint8List> readUid() {
-    return transceiveChecked(card, 'FFCA000000');
-  }
+  Future<Uint8List> readUid() => transport.readUid();
 
   /// A generic identification summary: UID, ATR, and the Capability
   /// Container if the tag has one (best-effort -- a read failure here
@@ -68,7 +65,7 @@ class Type2Tag extends TagDriver {
     return Type2TagInfo(
       technology: 'NFC Forum Type 2 (MIFARE Ultralight/NTAG)',
       uid: tagUid,
-      atr: card.atr,
+      atr: null,
       capabilityContainer: cc,
     );
   }
@@ -76,19 +73,12 @@ class Type2Tag extends TagDriver {
   /// Reads and parses the tag's Capability Container (CC), normally found
   /// at page 3 of the tag's memory.
   Future<CapabilityContainer> readCapabilityContainer() async {
-    final bytes = await transceiveChecked(card, 'FFB0000304');
-    if (bytes.length != 4) {
-      throw Exception('Failed to read Capability Container (expected 4 '
-          'bytes, got ${bytes.length})');
-    }
-    return CapabilityContainer.parse(bytes);
+    return CapabilityContainer.parse(await transport.readCapabilityContainer());
   }
 
   /// Reads the tag's full raw memory, starting at page 0, until a page
   /// read fails or the page number would no longer fit in one byte.
-  Future<Uint8List> readMemoryDump() {
-    return _readPagesFrom(0);
-  }
+  Future<Uint8List> readMemoryDump() => _readPagesFrom(0);
 
   /// Attempts to read the tag's chip identification via the NXP
   /// `GET_VERSION` (0x60) command.
@@ -96,31 +86,20 @@ class Type2Tag extends TagDriver {
   /// Returns `null` if the reader doesn't support this, the command fails,
   /// or the response isn't the expected 8 bytes, rather than throwing.
   Future<ChipVersion?> readChipVersion() async {
-    try {
-      final responseHex = await card.transceive('FF0000000160');
-      final data = stripAndCheckSw(responseHex);
-      if (data == null || data.length != 8) {
-        return null;
-      }
-      return ChipVersion.parse(data);
-    } catch (_) {
-      return null;
-    }
+    final data = await transport.getVersion();
+    return data == null ? null : ChipVersion.parse(data);
   }
 
   Future<Uint8List> _readPagesFrom(int startPage, {int? maxBytes}) async {
     final buffer = BytesBuilder();
     var page = startPage;
     while ((maxBytes == null || buffer.length < maxBytes) && page <= 0xFF) {
-      final pageHex = page.toRadixString(16).padLeft(2, '0');
-      String? chunkHex;
+      Uint8List chunk;
       try {
-        chunkHex = await card.transceive('FFB000${pageHex}10');
+        chunk = await transport.readPages(page);
       } catch (_) {
         break;
       }
-      final chunk = stripAndCheckSw(chunkHex);
-      if (chunk == null) break;
       buffer.add(chunk);
       page += 4;
     }
