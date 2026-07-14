@@ -88,6 +88,32 @@ class _FakeAndroidNfcManager extends AndroidNfcManager {
   }
 }
 
+/// Same shape as [_FakeAndroidNfcManager], but [getNfcState] resolves a
+/// caller-supplied [Future] instead of going through the real mocked method
+/// channel. Needed to deterministically reproduce (and verify the fix for)
+/// the `combineConnectionState` race where a CCID `readerStates()` tick
+/// could fire -- and `emit()` -- before the initial `getNfcState()` await
+/// resolved: the real method channel's response timing can't be pinned down
+/// precisely enough to force that race on demand, but a [Completer] can.
+class _DelayedAndroidNfcManager extends AndroidNfcManager {
+  _DelayedAndroidNfcManager(this._nfcState)
+      : super(
+          methodChannel: const MethodChannel('nfc_hub'),
+          eventChannel: const EventChannel('nfc_hub/events'),
+        );
+
+  final Future<NfcState> _nfcState;
+
+  @override
+  Future<NfcState> getNfcState() => _nfcState;
+
+  @override
+  Future<void> startReaderMode() async {}
+
+  @override
+  Future<void> stopReaderMode() async {}
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -279,11 +305,17 @@ void main() {
   });
 
   group('NfcHub.readTag', () {
-    test('returns the first tag from any source', () async {
+    test(
+        'returns the first tag from any source, and stops BOTH sources '
+        'once it resolves (no leaked reader mode / poll loop)', () async {
       final manager = _FakeAndroidNfcManager();
+      final platform = _FakePlatform()..readers = ['reader-1'];
       final hub = NfcHub(
         androidNfcManager: manager,
-        ccidSource: CcidSource(_FakePlatform()),
+        ccidSource: CcidSource(
+          platform,
+          pollInterval: const Duration(milliseconds: 5),
+        ),
       );
 
       final future = hub.readTag();
@@ -292,20 +324,63 @@ void main() {
 
       final driver = await future;
       expect(driver, isA<FelicaTag>());
+
+      // `.first` resolving must cancel its subscription to the merged
+      // stream, which must cancel both underlying sources -- exactly like
+      // an explicit `tagStream().listen(...).cancel()` does (see the
+      // 'starts BOTH sources...' test above).
+      await pumpEventQueue();
+      expect(manager.stopReaderModeCalls, 1,
+          reason: 'readTag() resolving should stop the Android source too');
+
+      final pollCountAfterReturn = platform.listReadersLog.length;
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(platform.listReadersLog.length, pollCountAfterReturn,
+          reason: 'readTag() resolving should stop the CCID poll loop too');
     });
 
-    test('with a timeout throws TimeoutException when nothing arrives',
+    test(
+        'with a timeout: throws TimeoutException AND stops BOTH sources '
+        '(no leaked reader mode / poll loop) when nothing arrives',
         () async {
       final manager = _FakeAndroidNfcManager();
+      final platform = _FakePlatform()..readers = ['reader-1'];
       final hub = NfcHub(
         androidNfcManager: manager,
-        ccidSource: CcidSource(_FakePlatform()),
+        ccidSource: CcidSource(
+          platform,
+          pollInterval: const Duration(milliseconds: 5),
+        ),
       );
 
       await expectLater(
-        hub.readTag(timeout: const Duration(milliseconds: 20)),
+        hub.readTag(timeout: const Duration(milliseconds: 30)),
         throwsA(isA<TimeoutException>()),
       );
+      await pumpEventQueue();
+
+      // Both sources must have actually started while readTag was waiting
+      // -- otherwise "stopped" below would be vacuously true.
+      expect(manager.startReaderModeCalls, 1);
+      final pollCountAtTimeout = platform.listReadersLog.length;
+      expect(pollCountAtTimeout, greaterThan(0));
+
+      // The critical assertion: applying the timeout to `.first` alone (the
+      // old `Future.timeout` implementation) never cancels the underlying
+      // stream subscription, so on timeout Android reader mode and the
+      // CCID poll loop would keep running forever. Applying the timeout to
+      // the stream itself (so `.first` cancels on the resulting error) must
+      // stop both.
+      expect(manager.stopReaderModeCalls, 1,
+          reason: 'Android reader mode must be stopped once readTag times '
+              'out, not left running forever');
+
+      // Wait well past several more poll intervals: nothing further should
+      // happen on the CCID source now that readTag's timeout has fired.
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(platform.listReadersLog.length, pollCountAtTimeout,
+          reason: 'CCID polling must stop once readTag times out, not keep '
+              'ticking forever');
     });
   });
 
@@ -365,6 +440,61 @@ void main() {
 
       expect(states.last.builtInNfcAvailable, false);
       expect(states.last.builtInNfcReason, NfcUnavailableReason.noHardware);
+
+      await sub.cancel();
+    });
+
+    test(
+        'resolves the initial NFC state before wiring up readerStates/'
+        'nfcStateChanges, so the first emission never carries the wrong '
+        'built-in default', () async {
+      final getNfcStateCompleter = Completer<NfcState>();
+      final manager = _DelayedAndroidNfcManager(getNfcStateCompleter.future);
+      final platform = _FakePlatform()
+        ..readers = ['reader-1']
+        ..cardsPresent.add('reader-1');
+      final hub = NfcHub(
+        androidNfcManager: manager,
+        ccidSource: CcidSource(
+          platform,
+          pollInterval: const Duration(milliseconds: 5),
+        ),
+      );
+
+      final states = <CcidConnectionState>[];
+      final sub = hub.connectionState().listen(states.add);
+
+      // Let the CCID poll loop have plenty of chances to tick and emit a
+      // readerStates change, all while getNfcState() is still unresolved --
+      // reproducing the race: a reader-state change is "pending" before the
+      // initial built-in-NFC state is known. With the fix, readerStates()
+      // isn't even subscribed yet at this point, so nothing can emit.
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(states, isEmpty,
+          reason: 'no snapshot should emit until the initial NFC state is '
+              'known -- otherwise it would carry the wrong builtIn default '
+              '(false/noHardware) alongside the correct externalReaders');
+
+      getNfcStateCompleter.complete(NfcState.enabled);
+      // Real delay (not just pumpEventQueue()) so the CCID poll loop --
+      // only just subscribed to now -- gets a real Timer tick.
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(states, isNotEmpty);
+      // The very first emission -- fired right after getNfcState()
+      // resolves, before any readerStates tick has had a chance to run --
+      // must already reflect the real built-in NFC state, not the
+      // hardcoded false default this race used to leak into it.
+      expect(states.first.builtInNfcAvailable, true,
+          reason: 'the very first emission must already reflect the real '
+              'built-in NFC state, not the hardcoded false default');
+      expect(states.first.builtInNfcReason, NfcUnavailableReason.none);
+
+      // Once the (now-subscribed) CCID poll loop has ticked, a later
+      // emission reflects reader-1's card too -- proving the fix didn't
+      // just delete the reader-state reporting.
+      expect(states.last.externalReaders,
+          [const ExternalReaderState('reader-1', true)]);
 
       await sub.cancel();
     });

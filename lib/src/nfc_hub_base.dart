@@ -78,10 +78,22 @@ class NfcHub {
   /// [from]).
   ///
   /// If [timeout] is given and no tag arrives within it, the returned
-  /// future completes with a [TimeoutException] instead.
+  /// future completes with a [TimeoutException] instead -- and, since the
+  /// timeout is applied to the stream itself (not raced against `.first`),
+  /// the underlying source(s) (Android reader mode / the CCID poll loop)
+  /// are stopped just like they are when a tag actually arrives, rather
+  /// than being left running forever.
   Future<TagDriver> readTag({CcidSourceFilter? from, Duration? timeout}) {
-    final first = tagStream(from: from).first;
-    return timeout == null ? first : first.timeout(timeout);
+    final stream = tagStream(from: from);
+    if (timeout == null) return stream.first;
+    return stream
+        .timeout(
+          timeout,
+          onTimeout: (sink) => sink.addError(
+            TimeoutException('readTag timed out after $timeout', timeout),
+          ),
+        )
+        .first;
   }
 
   /// A stream of the combined connection state: whether the phone's

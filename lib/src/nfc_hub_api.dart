@@ -153,7 +153,7 @@ Stream<TagDriver> mergeTagStreams({
 
   controller = StreamController<TagDriver>.broadcast(
     onListen: start,
-    onCancel: () => unawaited(stop()),
+    onCancel: stop,
   );
   return controller.stream;
 }
@@ -202,6 +202,18 @@ Stream<CcidConnectionState> combineConnectionState({
   }
 
   Future<void> start() async {
+    // Resolve the initial built-in-NFC state BEFORE wiring up the
+    // emitting subscriptions below. Otherwise a CCID readerStates tick (or
+    // an nfcStateChanges event) could fire -- and emit() -- while
+    // builtInAvailable/builtInReason still held their hardcoded
+    // (false/noHardware) defaults, handing the app a snapshot with correct
+    // external-reader info but a wrong built-in-NFC verdict.
+    try {
+      applyNfcState(await manager.getNfcState());
+    } catch (error, stackTrace) {
+      controller.addError(error, stackTrace);
+    }
+
     readerSub = ccidSource.readerStates().listen(
       (states) {
         externalReaders = states;
@@ -218,11 +230,6 @@ Stream<CcidConnectionState> combineConnectionState({
       onError: controller.addError,
     );
 
-    try {
-      applyNfcState(await manager.getNfcState());
-    } catch (error, stackTrace) {
-      controller.addError(error, stackTrace);
-    }
     emit();
   }
 
@@ -235,7 +242,7 @@ Stream<CcidConnectionState> combineConnectionState({
 
   controller = StreamController<CcidConnectionState>.broadcast(
     onListen: () => unawaited(start()),
-    onCancel: () => unawaited(stop()),
+    onCancel: stop,
   );
   return controller.stream;
 }
