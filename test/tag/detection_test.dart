@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:nfc_hub/nfc_hub.dart';
+import 'package:nfc_hub/src/transport/transport.dart' show TagLostException;
 import 'package:flutter_test/flutter_test.dart';
 
 class _FakeCcidPlatform extends NfcHubPlatform {
@@ -99,6 +100,45 @@ void main() {
       final driver = await identifyTag(card);
 
       expect(driver, isA<FelicaTag>());
+    });
+
+    test(
+        'degrades to probing (instead of hard-failing with TagLostException) '
+        'when the ATR says MIFARE Classic but the PN532 Type A poll finds no '
+        'target (regression test: MifareClassicTransport construction now '
+        'does I/O -- a PN532 poll -- and can throw, whereas the ATR fast '
+        'path used to be I/O-free and could not fail)', () async {
+      final atr = Uint8List.fromList([
+        0x3B, 0x8F, 0x80, 0x01, //
+        0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0x00, 0x01,
+      ]);
+      final card = CcidCard('fake-reader', atr: atr);
+      // NbTg=00 -- the PN532 reports no Type A target answered the poll --
+      // for every poll attempt (both the ATR-path transport build and the
+      // later MIFARE probe during fallback). Every other probe capdu is
+      // left unconfigured, so _tryTransceive's catch-all treats them as "no
+      // response", and the Type B poll's own try/catch treats the PN532's
+      // "no fake response configured" error as a failed probe -- nothing
+      // matches, so identifyTag() should surface a diagnosable
+      // UnrecognizedTagException rather than the opaque TagLostException
+      // that the failed poll actually threw.
+      NfcHubPlatform.instance = _FakeCcidPlatform({
+        'FF00000004D44A0100': 'D54B009000',
+      });
+
+      try {
+        await identifyTag(card);
+        fail('expected identifyTag() to throw UnrecognizedTagException');
+      } on TagLostException catch (e) {
+        fail('identifyTag() hard-aborted with $e instead of degrading to '
+            'capability probing');
+      } on UnrecognizedTagException catch (e) {
+        // The probe log proves detection actually ran every family's probe
+        // (including a second, logged MIFARE attempt) rather than bailing
+        // out early.
+        expect(e.message, contains('MIFARE default-key auth'));
+        expect(e.message, contains('TagLostException'));
+      }
     });
 
     test('treats an unmarked ATR as a generic ISO-DEP card', () async {

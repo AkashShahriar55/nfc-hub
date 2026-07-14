@@ -60,7 +60,15 @@ Future<TagDriver?> _identifyFromAtr(
       final c0 = historicalBytes[c0Index];
       final c1 = historicalBytes[c1Index];
       if (c0 == 0x00 && (c1 == 0x01 || c1 == 0x02)) {
-        return MifareClassicTag(await backend.mifareClassic());
+        try {
+          return MifareClassicTag(await backend.mifareClassic());
+        } catch (_) {
+          // The ATR says MIFARE Classic, but the card did not answer the
+          // Type A poll the transport needs. Rather than hard-failing with an
+          // opaque TagLostException, fall through to capability probing, which
+          // tries every family and reports each probe's outcome.
+          return null;
+        }
       }
       if (c0 == 0x00 && c1 == 0x03) {
         return Type2Tag(backend.type2());
