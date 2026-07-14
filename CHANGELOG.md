@@ -1,3 +1,35 @@
+## 0.5.0
+
+**Internal:** tag drivers are now built on per-technology transport interfaces
+(`Type2Transport`, `MifareClassicTransport`, `NfcFTransport`,
+`IsoDepTransport`, `NfcBTransport`) rather than talking to a `CcidCard`
+directly. The PC/SC and PN532 reader dialect now lives in exactly one place
+(`CcidTransportBackend`, under `lib/src/transport/`). No behavior change:
+reading a tag through a CCID reader works exactly as in 0.4.0.
+
+This is the groundwork for built-in NFC support — a second backend can now
+implement the same interfaces without touching a driver.
+
+* Driver constructors now take a transport instead of a `CcidCard`. Use
+  `identifyTag()` to obtain drivers; it is unchanged.
+* `TagDriver` no longer exposes a `card` field.
+* `TagLostException` is now exported from `package:nfc_hub/nfc_hub.dart`.
+  `identifyTag()` can throw it (via `CcidTransportBackend.mifareClassic()`
+  when no Type A target answers the poll); it was previously uncatchable by
+  type outside the package.
+* Fix: a rejected PN532 poll no longer makes ISO-DEP cards unusable on a
+  generic (non-ACS) CCID reader. The `FF 00 00 00` escape that carries the
+  poll is ACS-specific, and a reader that rejects it used to make
+  `identifyTag()` hard-abort even though ISO 7816-4 APDUs need no reader
+  dialect. The UID is now best-effort — `IsoDepTag` still works, just
+  without a UID, if the poll fails.
+* Fix: a failed Type A poll no longer hard-aborts ATR-path tag detection.
+  When the ATR points at MIFARE Classic but the card doesn't answer the
+  poll, `identifyTag()` now falls back to capability probing (as it always
+  did for an unrecognized ATR) instead of propagating the raw
+  `TagLostException`, and the resulting error reports every probe's
+  outcome.
+
 ## 0.4.0
 
 **Breaking:** the package is renamed from `ccid` to `nfc_hub`.
