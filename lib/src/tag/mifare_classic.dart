@@ -103,6 +103,11 @@ class MifareClassicTag extends TagDriver {
 
   /// Reads every block in [sector] (4 blocks on a 1K/4K tag). The sector
   /// must already be authenticated.
+  ///
+  /// KNOWN LIMITATION: this assumes 4 blocks per sector, which is wrong for
+  /// MIFARE Classic 4K sectors 32-39 (16 blocks each) -- those sectors will
+  /// read the wrong block range. Pre-existing; not fixed here, see
+  /// [MifareClassicTransport.authenticate] for the matching arithmetic.
   Future<List<Uint8List>> readSector(int sector) async {
     final firstBlock = sector * 4;
     final blocks = <Uint8List>[];

@@ -29,6 +29,23 @@ implement the same interfaces without touching a driver.
   did for an unrecognized ATR) instead of propagating the raw
   `TagLostException`, and the resulting error reports every probe's
   outcome.
+* Fix: a MIFARE Classic card is no longer silently misidentified as a
+  generic ISO-DEP card when the PN532 identity poll is rejected. The ATR is
+  now the stronger signal -- once it positively matches MIFARE Classic,
+  `identifyTag()` returns `MifareClassicTag` directly rather than falling
+  through to capability probing, whose loose SELECT-response heuristic
+  could mistake an error status word for a real ISO-DEP SELECT. The
+  driver's identity (uid/atqa/sak) degrades to empty/zero when the poll
+  fails; MIFARE's actual operations (Load Key/General Authenticate/Read
+  Binary) still work, since they need no PN532 dialect at all.
+* `Type2Transport`, `MifareClassicTransport`, `NfcFTransport`,
+  `IsoDepTransport`, and `NfcBTransport` are now exported from
+  `package:nfc_hub/nfc_hub.dart`, so consumers can name a driver
+  constructor's parameter type directly.
+* Known limitations: `MifareClassicTransport.authenticate`'s and
+  `MifareClassicTag.readSector`'s sector-to-block arithmetic assumes 4
+  blocks per sector, which is wrong for MIFARE Classic 4K sectors 32-39 (16
+  blocks each). Pre-existing; documented but not fixed in this release.
 
 ## 0.4.0
 

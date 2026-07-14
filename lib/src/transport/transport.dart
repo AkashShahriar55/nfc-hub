@@ -2,10 +2,20 @@ import 'dart:typed_data';
 
 import '../tag/mifare_classic.dart' show MifareKeyType;
 
-/// Thrown by any transport call after the tag has left the field or the
-/// card was removed from the reader. Both backends map their native
-/// failure onto this: Android's `TagLostException`, and a CCID
-/// transceive/slot-status failure.
+/// Thrown by a transport call after the tag has left the field or the card
+/// was removed from the reader.
+///
+/// **This contract is not yet unified across backends.** Today it is
+/// reserved for backends that can detect tag loss explicitly -- i.e. the
+/// future Android backend, via its native `TagLostException`. The CCID
+/// backend does NOT currently throw this: a failed transceive or a
+/// rejected/empty PN532 poll surfaces as a generic `Exception` (see
+/// `transceiveChecked` in `lib/src/apdu.dart`), and `CcidTransportBackend`
+/// no longer throws `TagLostException` at all as of the MIFARE Classic
+/// identity-poll fix (its identity poll degrades to an empty/zero identity
+/// instead). An app that catches `TagLostException` to detect card removal
+/// will therefore see it on Android but never on CCID. Unifying the two
+/// backends' error contracts is future work, not done here.
 class TagLostException implements Exception {
   final String message;
 
@@ -53,6 +63,13 @@ abstract class MifareClassicTransport {
 
   /// Authenticates [sector] with [key] as key [type].
   /// Throws [MifareAuthException] if the key is rejected.
+  ///
+  /// KNOWN LIMITATION: sector-to-block arithmetic here assumes 4 blocks per
+  /// sector (`block = sector * 4`), which is correct for every 1K sector
+  /// and for 4K sectors 0-31, but WRONG for 4K sectors 32-39 (16 blocks
+  /// each). Android's `MifareClassic.sectorToBlock()` gets this right, so
+  /// implementations of this interface will silently disagree on high 4K
+  /// sectors until this is fixed as dedicated, separate work.
   Future<void> authenticate(int sector, MifareKeyType type, Uint8List key);
 
   /// Reads one 16-byte block. Its sector must already be authenticated.
@@ -61,10 +78,11 @@ abstract class MifareClassicTransport {
 
 /// Transport for a FeliCa (NFC-F / JIS X 6319-4) tag.
 ///
-/// Raw-frame: the same length-prefixed FeliCa frame is valid on both
-/// sides. Android's `NfcF.transceive` takes exactly this; the CCID backend
-/// wraps it in the PN532 InDataExchange command (`D4 40 01`) and strips
-/// the `D5 41 <status>` response header.
+/// Raw-frame, but **the framing is asymmetric between request and
+/// response** -- see [transceive] for the exact, hardware-validated
+/// contract. Get this wrong in a new backend and FeliCa reads fail
+/// silently against real hardware (this is the only raw-frame interface
+/// with real hardware validation, against the Dhaka MRT card).
 abstract class NfcFTransport {
   /// The 8-byte IDm.
   Future<Uint8List> get idm;
@@ -72,8 +90,29 @@ abstract class NfcFTransport {
   /// The 8-byte PMm (Manufacturer Parameter).
   Future<Uint8List> get pmm;
 
-  /// Sends a length-prefixed FeliCa frame, returns the raw response frame
-  /// (its own length byte included).
+  /// Sends a FeliCa command frame and returns the raw response frame.
+  ///
+  /// **The framing is asymmetric -- read this carefully before implementing
+  /// a new backend:**
+  /// * [felicaFrame] passed IN is **UNPREFIXED**: just `command code` then
+  ///   `payload`, with NO leading length byte. (See
+  ///   `FelicaTag.readWithoutEncryption` and `requestSystemCodes` in
+  ///   `lib/src/tag/felica.dart` -- both build frames with no length byte.)
+  /// * The frame returned OUT is **length-prefixed**: `length` then
+  ///   `response code` then `idm` (8 bytes) then `payload`, length byte
+  ///   included. (This is why the driver reads status flag 1 at index 10:
+  ///   len(1) + code(1) + idm(8).)
+  ///
+  /// Android's `NfcF.transceive()` REQUIRES the caller to supply the
+  /// leading length byte itself. An implementation MUST prepend
+  /// `felicaFrame.length + 1` before calling it -- passing [felicaFrame]
+  /// straight through un-prepended (as the request-side symmetry might
+  /// suggest) sends a malformed frame: the card reads the command code
+  /// byte as the length and the transceive fails. The CCID backend does
+  /// exactly this prepend before wrapping the frame in the PN532
+  /// InDataExchange command (`D4 40 01`); it strips the `D5 41 <status>`
+  /// response header but deliberately leaves the response's own length
+  /// byte in place.
   Future<Uint8List> transceive(Uint8List felicaFrame);
 }
 

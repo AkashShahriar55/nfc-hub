@@ -2,7 +2,6 @@ import 'dart:typed_data';
 
 import 'package:convert/convert.dart';
 import 'package:nfc_hub/nfc_hub.dart';
-import 'package:nfc_hub/src/transport/transport.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class _FakeNfcBTransport implements NfcBTransport {
