@@ -2,9 +2,12 @@
 /// the device's built-in NFC antenna, behind one API.
 library;
 
+export 'src/nfc_hub_api.dart'
+    show CcidSourceFilter, CcidConnectionState, NfcUnavailableReason;
 export 'src/nfc_hub_base.dart' show NfcHub, CcidCard;
 export 'src/ndef.dart' show NdefRecord, parseNdefRecords, parseTlvForNdefMessage;
 export 'src/platform/platform_interface.dart' show NfcHubPlatform;
+export 'src/source/ccid_source.dart' show ExternalReaderState;
 export 'src/tag/detection.dart' show identifyTag, identifyFromBackend;
 export 'src/tag/desfire_info.dart' show DesfireVersion, desfireGenerationLabel;
 export 'src/tag/felica.dart' show FelicaInfo, FelicaTag, FelicaReadResult;

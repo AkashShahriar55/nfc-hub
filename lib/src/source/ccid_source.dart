@@ -36,6 +36,22 @@ class ExternalReaderState {
 /// a card connected and already identified ([occupied]).
 enum _ReaderStatus { empty, occupied }
 
+/// A [TagDriver] paired with the name of the CCID reader that produced it.
+///
+/// [CcidSource] itself has no notion of "filtering" -- that's Task 7's
+/// concern (`NfcHub.tagStream(from: CcidSourceFilter.reader(...))`). This
+/// type exists purely so a consumer of [CcidSource.taggedTags] can tell
+/// which reader each driver came from without [CcidSource] needing to know
+/// about filters at all.
+class ReaderTaggedDriver {
+  const ReaderTaggedDriver(this.reader, this.driver);
+
+  /// The reader's name, exactly as reported by [NfcHubPlatform.listReaders].
+  final String reader;
+
+  final TagDriver driver;
+}
+
 /// PC/SC Part 3 "Get Data" (Get UID) pseudo-APDU. Reused here purely as a
 /// liveness probe for an already-[_ReaderStatus.occupied] reader -- any
 /// contactless storage card answers it, so a throw/failure is a reliable
@@ -84,7 +100,8 @@ const _probeApdu = 'FFCA000000';
 /// present -- the emitted [TagDriver] holds that same connection open so
 /// the app can drive reads (`readNdef`, `readSector`, etc.) against it.
 ///
-/// The loop only runs while [tags] or [readerStates] has a listener --
+/// The loop only runs while [tags], [taggedTags], or [readerStates] has a
+/// listener --
 /// mirroring [AndroidNfcSource]'s onListen/onCancel gating -- so nothing
 /// stays "hot" (USB traffic, and on real hardware, the user-facing
 /// permission prompt triggered by [NfcHubPlatform.connect] -- see the
@@ -109,6 +126,7 @@ class CcidSource implements TagSource {
   final Duration pollInterval;
 
   StreamController<TagDriver>? _tagsController;
+  StreamController<ReaderTaggedDriver>? _taggedTagsController;
   StreamController<List<ExternalReaderState>>? _statesController;
   Timer? _timer;
   int _listenerCount = 0;
@@ -119,6 +137,18 @@ class CcidSource implements TagSource {
   @override
   Stream<TagDriver> tags() {
     return (_tagsController ??= StreamController<TagDriver>.broadcast(
+      onListen: _onListen,
+      onCancel: _onCancel,
+    ))
+        .stream;
+  }
+
+  /// The same tags as [tags], but paired with the reader that produced each
+  /// one -- see [ReaderTaggedDriver]. Used by Task 7's unified stream to
+  /// implement `CcidSourceFilter.reader(name)`.
+  Stream<ReaderTaggedDriver> taggedTags() {
+    return (_taggedTagsController ??=
+            StreamController<ReaderTaggedDriver>.broadcast(
       onListen: _onListen,
       onCancel: _onCancel,
     ))
@@ -240,6 +270,7 @@ class CcidSource implements TagSource {
     try {
       final driver = await identifyTag(card);
       _tagsController?.add(driver);
+      _taggedTagsController?.add(ReaderTaggedDriver(reader, driver));
     } catch (error, stackTrace) {
       // Connected but couldn't identify the card -- keep the reader marked
       // occupied (a card IS physically seated); log and move on, same as
@@ -306,6 +337,7 @@ class CcidSource implements TagSource {
       }
     }
     await _tagsController?.close();
+    await _taggedTagsController?.close();
     await _statesController?.close();
   }
 }

@@ -54,6 +54,23 @@ TagTechHint? hintFromTechList(List<String> techList) {
 /// first listen and stops it ([AndroidNfcManager.stopReaderMode]) once the
 /// last listener cancels, so the antenna is only kept hot while something
 /// is actually consuming [tags].
+///
+/// Two behaviors carried forward from Plan 3 Task 4 and ratified here in
+/// Task 7, now that `NfcHub.connectionState()` exists:
+///
+///  - A [startReaderMode] failure on listen (NFC off, absent, or a
+///    transient platform error) is logged, not surfaced through [tags] --
+///    there is no synchronous caller left to report it to by the time it
+///    happens, since `tags()` has already returned its stream. Availability
+///    is `NfcHub.connectionState()`'s job now: an app checks (or watches)
+///    it before/while listening to `tagStream()` rather than relying on a
+///    thrown error here.
+///  - A hinted-but-unidentifiable discovery (`identifyFromBackend` throws)
+///    is logged and dropped -- a silent dropped tap, with no per-tap error
+///    surfaced to the app. This mirrors `CcidSource`, which does the same
+///    for a card that connects but fails identification. Seamlessness means
+///    a bad tap just doesn't produce a tag; the app is expected to notice
+///    "no tag yet" rather than being handed a per-source error channel.
 class AndroidNfcSource implements TagSource {
   AndroidNfcSource(this._manager);
 
@@ -77,7 +94,20 @@ class AndroidNfcSource implements TagSource {
         _controller?.addError(error, stackTrace);
       },
     );
-    unawaited(_manager.startReaderMode());
+    unawaited(_manager.startReaderMode().catchError(
+      (Object error, StackTrace stackTrace) {
+        // Fire-and-forget by design (see the class doc) -- log for
+        // debugging visibility, but never surface this as a stream error:
+        // `NfcHub.connectionState()` is the app's way to check built-in
+        // NFC availability.
+        developer.log(
+          'startReaderMode() failed: $error',
+          name: 'nfc_hub.AndroidNfcSource',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      },
+    ));
   }
 
   Future<void> _stop() async {
