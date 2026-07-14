@@ -460,26 +460,28 @@ The USB permission broadcast action is now com.cheqplease.nfchub.USB_PERMISSION.
 
 These four names are unambiguous (no substring collisions with `CcidCard`, `CcidException`, `CcidDescriptor`, or the Kotlin `Ccid`), so a word-boundary substitution is safe. Order matters: do the longer names before the bare `Ccid`.
 
+**macOS `sed` caveat — this bites silently.** BSD `sed` (the default on macOS) does not support GNU's `\b` word-boundary escape. A `s/\bCcid\b/NfcHub/g` matches *nothing*, changes *nothing*, and exits *successfully* — you get a clean run and an unrenamed tree. Use BSD's `[[:<:]]` / `[[:>:]]` word-boundary classes instead:
+
 ```bash
 cd /Users/akashshahriar/StudioProjects/ccid
-FILES=$(grep -rl "CcidPlatform\|MethodChannelCcid\|PcscCcid\|\bCcid\b" lib test example/lib example/test 2>/dev/null)
+FILES=$(grep -rl "CcidPlatform\|MethodChannelCcid\|PcscCcid\|Ccid" lib test example/lib example/test 2>/dev/null)
 echo "$FILES"
 
 for f in $FILES; do
   sed -i '' \
-    -e 's/\bCcidPlatform\b/NfcHubPlatform/g' \
-    -e 's/\bMethodChannelCcid\b/MethodChannelNfcHub/g' \
-    -e 's/\bPcscCcid\b/PcscNfcHub/g' \
-    -e 's/\bCcid\b/NfcHub/g' \
+    -e 's/[[:<:]]CcidPlatform[[:>:]]/NfcHubPlatform/g' \
+    -e 's/[[:<:]]MethodChannelCcid[[:>:]]/MethodChannelNfcHub/g' \
+    -e 's/[[:<:]]PcscCcid[[:>:]]/PcscNfcHub/g' \
+    -e 's/[[:<:]]Ccid[[:>:]]/NfcHub/g' \
     "$f"
 done
 ```
 
-`\bCcid\b` matches only the standalone word `Ccid`, so `CcidCard`, `CcidException`, and `CcidDescriptor` are untouched. Verify that claim before moving on:
+`[[:<:]]Ccid[[:>:]]` matches only the standalone word `Ccid`, so `CcidCard`, `CcidException`, and `CcidDescriptor` are untouched. Do not take that on faith — the whole task hinges on it. Verify both directions before moving on:
 
 ```bash
 grep -rn "\bCcidCard\b" lib | head -3        # expect: still present, unrenamed
-grep -rn "\bCcid\b" lib test example/lib     # expect: no output
+grep -rnw "Ccid" lib test example/lib     # expect: no output
 ```
 
 - [ ] **Step 2: Fix the doc comments the rename left stale**
