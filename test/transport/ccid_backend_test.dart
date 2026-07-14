@@ -22,7 +22,7 @@ class _FakePlatform extends NfcHubPlatform {
 
   @override
   Future<String?> transceive(String reader, String capdu) async {
-    sent.add(capdu.toUpperCase());
+    sent.add(capdu); // raw, case preserved -- do not uppercase here.
     return responses[capdu.toUpperCase()];
   }
 }
@@ -157,6 +157,25 @@ void main() {
         throwsA(isA<MifareAuthException>()),
       );
     });
+
+    test('Load Key sends the key as UPPERCASE hex', () async {
+      // hex.encode() yields lowercase; the reader expects uppercase here,
+      // and the original hardware-validated code calls .toUpperCase().
+      // Guard it: without that call the key goes out as 'a0a1a2a3a4a5'.
+      install({
+        'FF00000004D44A0100': pollA,
+        'FF82000006A0A1A2A3A4A5': '9000',
+        'FF860000050100006000': '9000',
+      });
+      final t = await CcidTransportBackend(CcidCard('fake')).mifareClassic();
+      platform.sent.clear();
+
+      await t.authenticate(0, MifareKeyType.a,
+          Uint8List.fromList([0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5]));
+
+      expect(platform.sent.first, 'FF82000006A0A1A2A3A4A5');
+      expect(platform.sent.first, isNot(contains('a0a1'))); // not lowercase
+    });
   });
 
   group('NfcF transport', () {
@@ -189,6 +208,40 @@ void main() {
 
       expect(await t.idm, Uint8List.fromList([1, 2, 3, 4, 5, 6, 7, 8]));
       expect(platform.sent, ['FFCA000000']);
+    });
+
+    // Fixture shared with test/tag/felica_test.dart's "pmm polls the card"
+    // test: Polling command (00 FFFF 00 00, 5 bytes) framed to 6 bytes
+    // (leading length byte 06), wrapped in D4 40 01 -> 9-byte payload ->
+    // Lc=09. PMm is response[10..18] of the InDataExchange-stripped frame.
+    const idm = 'AABBCCDDEE001122';
+    const pmmHex = '0135428282468CFF';
+    const pollCapdu = 'FF00000009D440010600FFFF0000';
+    const pollResponse = 'D541001201$idm${pmmHex}9000';
+    final pmmBytes = Uint8List.fromList(
+        [0x01, 0x35, 0x42, 0x82, 0x82, 0x46, 0x8C, 0xFF]);
+
+    test('pmm sends the FeliCa Polling frame and returns the 8-byte PMm',
+        () async {
+      install({pollCapdu: pollResponse});
+      final t = CcidTransportBackend(CcidCard('fake')).nfcF();
+
+      final pmm = await t.pmm;
+
+      expect(platform.sent, [pollCapdu]);
+      expect(pmm, pmmBytes);
+    });
+
+    test('pmm is cached -- a second read does not re-send the polling APDU',
+        () async {
+      install({pollCapdu: pollResponse});
+      final t = CcidTransportBackend(CcidCard('fake')).nfcF();
+
+      final pmm = await t.pmm;
+      final pmmAgain = await t.pmm;
+
+      expect(pmmAgain, pmm);
+      expect(platform.sent, [pollCapdu]); // only sent once
     });
   });
 
