@@ -322,6 +322,11 @@ Define the Dart wrapper over the method+event channels the Kotlin will speak, an
   - `Future<NfcState> getNfcState()` — `getNfcState`.
   - `Future<void> openNfcSettings()` — `openNfcSettings`.
   - `NfcTagDiscovery` value type: `{int handle, List<String> techList, Uint8List uid, Uint8List? atqa, int? sak, Uint8List? atqb, Uint8List? idm, Uint8List? pmm, Uint8List? historicalBytes}`.
+
+**TWO DISTINCT STRING SPACES — pin these, a mismatch fails silently at runtime:**
+- `techList` (in a `tagDiscovered` event) carries Android's **fully-qualified** tech class names verbatim from `Tag.getTechList()`: `android.nfc.tech.NfcA`, `.NfcB`, `.NfcF`, `.IsoDep`, `.MifareClassic`, `.MifareUltralight`, `.Ndef`, etc. Task 4's `hintFromTechList` matches on these FQCNs.
+- The `tech` argument to `nfcTransceive` is a **bare short selector** from the fixed set `{'NfcA', 'NfcB', 'NfcF', 'IsoDep'}`, chosen by the Dart transport (Task 3) and matched by the Kotlin `when (tech)` (Task 5). It is NOT a FQCN.
+- **These never mix.** Task 3 must NOT pass a `techList` entry as the `tech` arg — it passes the bare selector for the transport's family. Task 5's `when` uses bare names. Task 4's hint mapping uses FQCNs. Keep them in their lanes.
   - `enum NfcState { enabled, disabled, noHardware }`.
 
 - [ ] **Step 1: Write the failing test** (fake the method channel + event channel):
