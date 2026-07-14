@@ -18,6 +18,7 @@ Every task's requirements implicitly include this section.
 - `flutter analyze` must show no new issues. Two pre-existing info-lints in `example/test/mrt_transaction_test.dart` are expected.
 - **Every task must leave the build green.** Drivers migrate one at a time; each migration task also updates that driver's construction sites (`identifyTag`, tests, example) in the same commit.
 - **No `NfcATransport`.** Raw ISO14443-A byte access is not portable to CCID (see the spec's portability rule). Type 2 gets a method-based transport. Do not add a raw-byte NfcA interface "for completeness."
+- **Every driver-migration task (3-7) MUST add its family's group to `test/integration_test.dart`.** Migrating a driver onto a fake transport leaves the CCID wire format and the driver logic covered by two *disjoint* half-tests that never meet — a backend/driver wiring mismatch slips through both. `test/integration_test.dart` drives the real stack (scripted reader at the wire level → `identifyTag` → real `CcidTransportBackend` → real driver → decoded result). It is the only place the halves are proven to agree. Do not migrate a driver without extending it.
 - Do NOT touch: `android/` (Kotlin), the method channel, `LICENSE`, or anything in Plan 3's scope (`tagStream`, `connectionState`, built-in NFC).
 
 Spec: `docs/superpowers/specs/2026-07-14-unified-nfc-transport-design.md` (read its "Layer 1" and "Layer 2" sections before starting).
