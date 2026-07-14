@@ -1,65 +1,71 @@
+import 'dart:typed_data';
+
+import 'package:convert/convert.dart';
 import 'package:nfc_hub/nfc_hub.dart';
+import 'package:nfc_hub/src/transport/transport.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-class _FakeCcidPlatform extends NfcHubPlatform {
-  final Map<String, String?> responses;
+/// Fake [IsoDepTransport] mapping request-hex -> response-hex, the same
+/// idiom the migrated driver tests (type2_test.dart, felica_test.dart) use
+/// for their fake transports.
+class _FakeIsoDepTransport implements IsoDepTransport {
+  final Map<String, String> responses;
   final List<String> requestedCapdus = [];
 
-  _FakeCcidPlatform(this.responses);
+  _FakeIsoDepTransport(this.responses);
 
   @override
-  Future<String?> transceive(String reader, String capdu) async {
+  Future<Uint8List> get uid async => Uint8List(0);
+
+  @override
+  Uint8List? get historicalBytes => null;
+
+  @override
+  Future<Uint8List> transceive(Uint8List apdu) async {
+    final capdu = hex.encode(apdu).toUpperCase();
     requestedCapdus.add(capdu);
-    return responses[capdu];
+    final response = responses[capdu];
+    if (response == null) {
+      throw Exception('No fake response configured for capdu: $capdu');
+    }
+    return Uint8List.fromList(hex.decode(response));
   }
-
-  @override
-  Future<List<String>> listReaders() async => ['fake-reader'];
-
-  @override
-  Future<CcidCard> connect(String reader) async => CcidCard(reader);
-
-  @override
-  Future<void> disconnect(String reader) async {}
 }
 
-class _SequencedFakeCcidPlatform extends NfcHubPlatform {
-  final List<String?> responses;
+/// Fake [IsoDepTransport] that returns each response in [responses] in
+/// order, regardless of the request bytes -- needed because DESFire's
+/// GetVersion exchange sends the same continuation APDU ('AF') twice with
+/// two different expected responses.
+class _SequencedFakeIsoDepTransport implements IsoDepTransport {
+  final List<String> responses;
   final List<String> requestedCapdus = [];
   int _index = 0;
 
-  _SequencedFakeCcidPlatform(this.responses);
+  _SequencedFakeIsoDepTransport(this.responses);
 
   @override
-  Future<String?> transceive(String reader, String capdu) async {
+  Future<Uint8List> get uid async => Uint8List(0);
+
+  @override
+  Uint8List? get historicalBytes => null;
+
+  @override
+  Future<Uint8List> transceive(Uint8List apdu) async {
+    final capdu = hex.encode(apdu).toUpperCase();
     requestedCapdus.add(capdu);
     if (_index >= responses.length) {
       throw Exception('No more fake responses configured (requested $capdu)');
     }
-    return responses[_index++];
+    return Uint8List.fromList(hex.decode(responses[_index++]));
   }
-
-  @override
-  Future<List<String>> listReaders() async => ['fake-reader'];
-
-  @override
-  Future<CcidCard> connect(String reader) async => CcidCard(reader);
-
-  @override
-  Future<void> disconnect(String reader) async {}
 }
 
 void main() {
-  tearDown(() {
-    NfcHubPlatform.instance = null;
-  });
-
   test('selectApplication() sends a SELECT-by-name APDU with the AID as Lc/data',
       () async {
     // AID 'D2760000850101' is 7 bytes (14 hex chars), so Lc = 07.
-    final fake = _FakeCcidPlatform({'00A4040007D2760000850101': '9000'});
-    NfcHubPlatform.instance = fake;
-    final tag = IsoDepTag(CcidCard('fake-reader'));
+    final fake = _FakeIsoDepTransport({'00A4040007D2760000850101': '9000'});
+    final tag = IsoDepTag(fake);
 
     final response = await tag.selectApplication('D2760000850101');
 
@@ -70,10 +76,10 @@ void main() {
     );
   });
 
-  test('transceive() passes the APDU straight through to the card', () async {
-    final fake = _FakeCcidPlatform({'00B0000000': 'AABB9000'});
-    NfcHubPlatform.instance = fake;
-    final tag = IsoDepTag(CcidCard('fake-reader'));
+  test('transceive() passes the APDU straight through to the transport',
+      () async {
+    final fake = _FakeIsoDepTransport({'00B0000000': 'AABB9000'});
+    final tag = IsoDepTag(fake);
 
     final response = await tag.transceive('00B0000000');
 
@@ -83,13 +89,12 @@ void main() {
   group('readDesfireVersion', () {
     test('parses the 3-frame GetVersion exchange (real example from ACS '
         'ACR122U API documentation)', () async {
-      final fake = _SequencedFakeCcidPlatform([
+      final fake = _SequencedFakeIsoDepTransport([
         'AF04010100021805',
         'AF04010100061805',
         '0004525A19B21B808E36544D402604',
       ]);
-      NfcHubPlatform.instance = fake;
-      final tag = IsoDepTag(CcidCard('fake-reader'));
+      final tag = IsoDepTag(fake);
 
       final version = await tag.readDesfireVersion();
 

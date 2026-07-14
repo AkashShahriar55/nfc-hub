@@ -4,8 +4,7 @@ import 'package:convert/convert.dart';
 
 import 'desfire_info.dart';
 import 'tag_driver.dart';
-import '../nfc_hub_base.dart';
-import '../pn532.dart';
+import '../transport/transport.dart';
 
 class IsoDepInfo implements TagInfo {
   @override
@@ -31,28 +30,31 @@ class IsoDepInfo implements TagInfo {
 /// This driver only provides raw ISO 7816-4 SELECT + APDU transport; it has
 /// no knowledge of any particular card's application/file model.
 class IsoDepTag extends TagDriver {
-  final CcidCard card;
+  final IsoDepTransport transport;
 
-  IsoDepTag(this.card);
+  const IsoDepTag(this.transport);
 
   /// Sends a SELECT (by name/AID) command for [aidHex] (hex-encoded
   /// Application Identifier), returning the response APDU.
   Future<String?> selectApplication(String aidHex) {
     final lcHex = (aidHex.length ~/ 2).toRadixString(16).padLeft(2, '0');
-    return card.transceive('00A40400$lcHex$aidHex');
+    return transceive('00A40400$lcHex$aidHex');
   }
 
   /// Sends a raw APDU [capdu] (hex-encoded) and returns the response APDU
-  /// (hex-encoded), unchanged from [CcidCard.transceive].
-  Future<String?> transceive(String capdu) => card.transceive(capdu);
+  /// (hex-encoded), unchanged from [transport.transceive].
+  Future<String?> transceive(String capdu) async {
+    final response =
+        await transport.transceive(Uint8List.fromList(hex.decode(capdu)));
+    return hex.encode(response).toUpperCase();
+  }
 
   /// A generic identification summary. Attempts a DESFire `GetVersion`
   /// (best-effort -- most non-DESFire ISO14443-4 cards will fail this,
   /// which is expected and doesn't prevent returning the rest of the info).
   @override
   Future<IsoDepInfo> readTagInfo() async {
-    final target = await pollTypeA(card);
-    final tagUid = target?.uid ?? Uint8List(0);
+    final tagUid = await transport.uid;
     DesfireVersion? version;
     try {
       version = await readDesfireVersion();
@@ -65,7 +67,7 @@ class IsoDepTag extends TagDriver {
     return IsoDepInfo(
       technology: technology,
       uid: tagUid,
-      atr: card.atr,
+      atr: transport.historicalBytes,
       desfireVersion: version,
     );
   }
@@ -130,10 +132,11 @@ class IsoDepTag extends TagDriver {
   /// carrying DESFire's own continuation status (`0xAF` = more frames,
   /// `0x00` = last frame) instead of an ISO status word.
   Future<Uint8List> _desfireFrame(String capdu) async {
-    final responseHex = await card.transceive(capdu);
-    if (responseHex == null || responseHex.isEmpty) {
+    final response =
+        await transport.transceive(Uint8List.fromList(hex.decode(capdu)));
+    if (response.isEmpty) {
       throw Exception('No response to DESFire command $capdu');
     }
-    return Uint8List.fromList(hex.decode(responseHex));
+    return response;
   }
 }

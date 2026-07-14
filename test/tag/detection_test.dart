@@ -145,6 +145,13 @@ void main() {
       final atr = Uint8List.fromList(
           [0x3B, 0x8A, 0x80, 0x01, 0x50, 0x00, 0x00, 0x00, 0x00, 0x00]);
       final card = CcidCard('fake-reader', atr: atr);
+      // Building an IsoDepTransport now also does a real PN532 poll (for
+      // its UID), same as the MIFARE Classic ATR case above -- script a
+      // "no target found" (NbTg=00) response, since this test only cares
+      // about the resolved driver type, not the UID.
+      NfcHubPlatform.instance = _FakeCcidPlatform({
+        'FF00000004D44A0100': 'D54B009000',
+      });
 
       final driver = await identifyTag(card);
 
@@ -170,6 +177,10 @@ void main() {
         'FFCA000000': '00019000',
         'FFB0000304': '6A82',
         '00A4040000': '6A82',
+        // Building the matched IsoDepTransport does a real PN532 poll (for
+        // its UID); script a "no target found" response since this test
+        // only cares about the resolved driver type.
+        'FF00000004D44A0100': 'D54B009000',
       });
       final card = CcidCard('fake-reader');
 

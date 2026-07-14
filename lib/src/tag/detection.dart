@@ -90,7 +90,7 @@ Future<TagDriver?> _identifyFromAtr(
   }
   // A real ATS-derived ATR (not a PC/SC Part 3 synchronous-card pseudo-ATR)
   // with none of the above markers: treat as a generic processor card.
-  return IsoDepTag(card);
+  return IsoDepTag(await backend.isoDep());
 }
 
 /// Returns the index at which [needle] first occurs in [haystack], or null
@@ -145,7 +145,7 @@ Future<TagDriver> _identifyByProbing(
   final selectResponse = await _tryTransceive(card, '00A4040000');
   log.add('SELECT -> ${selectResponse ?? 'no response'}');
   if (selectResponse != null && selectResponse.length >= 4) {
-    return IsoDepTag(card);
+    return IsoDepTag(await backend.isoDep());
   }
 
   try {

@@ -42,6 +42,37 @@ class _FakeCcidPlatform extends NfcHubPlatform {
   Future<void> disconnect(String reader) async {}
 }
 
+/// Like [_FakeCcidPlatform], but returns each response in [responses] in
+/// order rather than keying by capdu. Needed for ISO-DEP's DESFire
+/// GetVersion exchange, which sends the very same continuation APDU
+/// ('AF') twice in a row, each expecting a different response -- a keyed
+/// map can't represent that.
+class _SequencedFakeCcidPlatform extends NfcHubPlatform {
+  final List<String> responses;
+  final List<String> requestedCapdus = [];
+  int _index = 0;
+
+  _SequencedFakeCcidPlatform(this.responses);
+
+  @override
+  Future<String?> transceive(String reader, String capdu) async {
+    requestedCapdus.add(capdu);
+    if (_index >= responses.length) {
+      throw Exception('No more fake responses configured (requested $capdu)');
+    }
+    return responses[_index++];
+  }
+
+  @override
+  Future<List<String>> listReaders() async => ['fake-reader'];
+
+  @override
+  Future<CcidCard> connect(String reader) async => CcidCard(reader);
+
+  @override
+  Future<void> disconnect(String reader) async {}
+}
+
 void main() {
   tearDown(() {
     NfcHubPlatform.instance = null;
@@ -229,6 +260,70 @@ void main() {
       // survive being wrapped by the backend in the PN532 InDataExchange
       // command (D4 40 01) exactly as a real ACR122U expects it.
       expect(fake.requestedCapdus, contains(readCapdu));
+    });
+  });
+
+  group('ISO-DEP', () {
+    test(
+        'identifyTag() detects a generic ISO-DEP card via an unmarked ATR '
+        'and the resulting driver decodes a real 3-frame native DESFire '
+        'GetVersion exchange', () async {
+      // A real ATS-derived ATR (not a PC/SC Part 3 synchronous-card
+      // pseudo-ATR) with none of the Type 2/MIFARE/FeliCa RID markers --
+      // same shape as test/tag/detection_test.dart's "unmarked ATR" case --
+      // so identifyTag() falls all the way through _identifyFromAtr to the
+      // generic ISO-DEP branch.
+      final atr = Uint8List.fromList(
+          [0x3B, 0x8A, 0x80, 0x01, 0x50, 0x00, 0x00, 0x00, 0x00, 0x00]);
+      final card = CcidCard('fake-reader', atr: atr);
+
+      // Building the resolved IsoDepTransport does a real PN532 poll for
+      // the UID (InListPassiveTarget): numTargets=01, Tg=01, ATQA=0344,
+      // SAK=20 (ISO14443-4 compliant), UID=04112233.
+      final pollBytes = [
+        0xD5, 0x4B, 0x01, 0x01, 0x03, 0x44, 0x20, 0x04, 0x04, 0x11, 0x22, 0x33,
+      ];
+      final pollResponse = '${hex.encode(pollBytes)}9000';
+
+      // The three ACS-documented DESFire GetVersion frames (same fixture
+      // bytes carried over byte for byte from test/tag/iso_dep_test.dart),
+      // sent as three native '60'/'AF'/'AF' exchanges. Per ACS's ACR122U
+      // documentation these carry NO PC/SC status word at all -- this is
+      // the exact behavior this task must not silently break.
+      final fake = _SequencedFakeCcidPlatform([
+        pollResponse,
+        'AF04010100021805',
+        'AF04010100061805',
+        '0004525A19B21B808E36544D402604',
+      ]);
+      NfcHubPlatform.instance = fake;
+
+      final driver = await identifyTag(card);
+
+      expect(driver, isA<IsoDepTag>());
+      final version = await (driver as IsoDepTag).readDesfireVersion();
+
+      expect(version.hardwareVendorId, equals(0x04));
+      expect(version.hardwareType, equals(0x01));
+      expect(version.hardwareSubtype, equals(0x01));
+      expect(version.hardwareMajor, equals(0x00));
+      expect(version.hardwareMinor, equals(0x02));
+      expect(version.hardwareStorageSize, equals(0x18));
+      expect(version.hardwareProtocol, equals(0x05));
+      expect(version.softwareMinor, equals(0x06));
+      expect(version.uid, equals([0x04, 0x52, 0x5A, 0x19, 0xB2, 0x1B, 0x80]));
+      expect(version.batch, equals([0x8E, 0x36, 0x54, 0x4D, 0x40]));
+      expect(version.productionWeek, equals(0x26));
+      expect(version.productionYear, equals(0x04));
+
+      // Guards the wire format end to end: the PN532 poll, then exactly
+      // three native DESFire frames ('60' then 'AF' twice) with no ISO
+      // wrapping and no status word expected on the way in either --
+      // matching the C-APDUs ACS's worked example documents.
+      expect(
+        fake.requestedCapdus,
+        equals(['FF00000004D44A0100', '60', 'AF', 'AF']),
+      );
     });
   });
 }
