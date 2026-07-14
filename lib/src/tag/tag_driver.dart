@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import '../nfc_hub_base.dart';
 
 /// Base class for tag-family-specific drivers returned by [identifyTag]
-/// (see `ccid_tag_detection.dart`).
+/// (see `detection.dart`).
 ///
 /// Each driver wraps a connected [CcidCard] and exposes only the read
 /// operations that make sense for that tag family.

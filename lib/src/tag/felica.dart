@@ -76,7 +76,7 @@ class FelicaTag extends TagDriver {
   /// InDataExchange-wrapped escape command `readWithoutEncryption` uses,
   /// and cached for the lifetime of this driver. PMm's first two bytes
   /// (ROM Type, IC Type) identify the chip model — see
-  /// [felicaModelName] in `ccid_felica_info.dart`.
+  /// [felicaModelName] in `felica_info.dart`.
   Future<Uint8List> get pmm async {
     final cached = _pmm;
     if (cached != null) return cached;

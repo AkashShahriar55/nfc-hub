@@ -1,3 +1,17 @@
+## 0.4.0
+
+**Breaking:** the package is renamed from `ccid` to `nfc_hub`.
+
+- Import path is now `package:nfc_hub/nfc_hub.dart`; `lib/` is restructured
+  behind a single public entry point.
+- `Ccid` is now `NfcHub`. `CcidPlatform`, `MethodChannelCcid`, and `PcscCcid`
+  are now `NfcHubPlatform`, `MethodChannelNfcHub`, and `PcscNfcHub`.
+  `CcidCard` keeps its name.
+- The Android package is now `com.cheqplease.nfchub` and the plugin class is
+  `NfcHubPlugin`. The method channel is named `nfc_hub`; the USB permission
+  broadcast action is `com.cheqplease.nfchub.USB_PERMISSION`.
+- No functional changes: tag reading behaves exactly as in 0.3.0.
+
 ## 0.3.0
 
 * Add `readTagInfo()` to every tag driver (`Type2Tag`, `MifareClassicTag`, `FelicaTag`, `IsoDepTag`, `TypeBTag`), returning a common `TagInfo` (technology, UID, ATR) plus family-specific details (SAK/ATQA, FeliCa PMm-derived chip model and system codes, DESFire generation).

@@ -1,11 +1,27 @@
-# ccid
+# nfc_hub
 
-[![pub version](https://img.shields.io/pub/v/ccid)](https://pub.dev/packages/ccid)
+[![pub version](https://img.shields.io/pub/v/nfc_hub)](https://pub.dev/packages/nfc_hub)
 [![Build Example App](https://github.com/nfcim/ccid/actions/workflows/example-app.yaml/badge.svg)](https://github.com/nfcim/ccid/actions/workflows/example-app.yaml)
 
-A Flutter plugin for reading and writing smart cards using the CCID protocol with PC/SC-like APIs.
+A Flutter plugin for reading NFC tags through external CCID/PC-SC readers and the device's built-in NFC antenna.
 
 ## Installation
+
+```yaml
+dependencies:
+  nfc_hub: ^0.4.0
+```
+
+```dart
+import 'package:nfc_hub/nfc_hub.dart';
+
+final nfcHub = NfcHub();
+final readers = await nfcHub.listReaders();
+final card = await nfcHub.connect(readers.first);
+final tag = await identifyTag(card);
+final info = await tag.readTagInfo();
+print(info.technology);
+```
 
 ### Android
 
@@ -26,3 +42,9 @@ This plugin uses [CryptoTokenKit](https://developer.apple.com/documentation/cryp
 which is available since macOS 10.10 / iOS 13.0.
 
 The `com.apple.security.smartcard` entitlement is required.
+
+## Acknowledgements
+
+`nfc_hub` began as a fork of [`ccid`](https://github.com/nfcim/ccid) by nfcim,
+MIT licensed (see `LICENSE`). The CCID/PC-SC transport layer derives from that
+work; the built-in-NFC support and the unified tag API are new.

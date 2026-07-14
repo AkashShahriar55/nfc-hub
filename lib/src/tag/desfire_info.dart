@@ -2,7 +2,7 @@
 /// `0x60`) exchange -- a 3-frame, 28-byte response identifying the exact
 /// chip generation (EV1/EV2/EV3/...), distinct from and unrelated to the
 /// Ultralight/NTAG `GET_VERSION` format (`ChipVersion` in
-/// `ccid_tag_info.dart`).
+/// `tag_info.dart`).
 class DesfireVersion {
   final int hardwareVendorId;
   final int hardwareType;

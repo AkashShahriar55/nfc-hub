@@ -162,7 +162,7 @@ void main() {
       () async {
     const pollCapdu = 'FF00000009D440010600FFFF0000';
     // ROM Type 0x03, IC Type 0x35 -> RC-SA01/2 (the confirmed Dhaka MRT
-    // chip -- see ccid_felica_info_test.dart).
+    // chip -- see felica_info_test.dart).
     const pmmHex = '0335428282468CFF';
     const pollResponse = 'D541001201$idmHex${pmmHex}9000';
     const requestCapdu = 'FF0000000DD440010A0CAABBCCDDEE001122';
