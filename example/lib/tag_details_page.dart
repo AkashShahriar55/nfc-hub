@@ -23,20 +23,7 @@ class _TagDetailsPageState extends State<TagDetailsPage> {
 
   Future<void> _loadTagInfo(TagDriver driver) async {
     await _load('Tag Info', () async {
-      final TagInfo info;
-      if (driver is Type2Tag) {
-        info = await driver.readTagInfo();
-      } else if (driver is MifareClassicTag) {
-        info = await driver.readTagInfo();
-      } else if (driver is FelicaTag) {
-        info = await driver.readTagInfo();
-      } else if (driver is IsoDepTag) {
-        info = await driver.readTagInfo();
-      } else if (driver is TypeBTag) {
-        info = await driver.readTagInfo();
-      } else {
-        return 'Unsupported driver type';
-      }
+      final TagInfo info = await driver.readTagInfo();
       final lines = [
         'Technology: ${info.technology}',
         'UID: ${_hex(info.uid)}',

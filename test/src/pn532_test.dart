@@ -1,5 +1,4 @@
 import 'package:nfc_hub/nfc_hub.dart';
-import 'package:nfc_hub/src/platform/platform_interface.dart';
 import 'package:nfc_hub/src/pn532.dart';
 import 'package:flutter_test/flutter_test.dart';
 

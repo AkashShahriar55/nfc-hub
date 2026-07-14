@@ -1,7 +1,6 @@
 # nfc_hub
 
 [![pub version](https://img.shields.io/pub/v/nfc_hub)](https://pub.dev/packages/nfc_hub)
-[![Build Example App](https://github.com/nfcim/ccid/actions/workflows/example-app.yaml/badge.svg)](https://github.com/nfcim/ccid/actions/workflows/example-app.yaml)
 
 A Flutter plugin for reading NFC tags through external CCID/PC-SC readers and the device's built-in NFC antenna.
 

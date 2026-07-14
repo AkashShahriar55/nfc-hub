@@ -3,15 +3,18 @@
 library;
 
 export 'src/nfc_hub_base.dart' show NfcHub, CcidCard;
-export 'src/ndef.dart' show NdefRecord;
+export 'src/ndef.dart' show NdefRecord, parseNdefRecords, parseTlvForNdefMessage;
+export 'src/platform/platform_interface.dart' show NfcHubPlatform;
 export 'src/tag/detection.dart' show identifyTag;
-export 'src/tag/desfire_info.dart' show DesfireVersion;
+export 'src/tag/desfire_info.dart' show DesfireVersion, desfireGenerationLabel;
 export 'src/tag/felica.dart' show FelicaInfo, FelicaTag, FelicaReadResult;
-export 'src/tag/felica_info.dart' show felicaSystemCodeLabel;
+export 'src/tag/felica_info.dart' show felicaModelName, felicaSystemCodeLabel;
 export 'src/tag/iso_b.dart' show TypeBInfo, TypeBTag;
 export 'src/tag/iso_dep.dart' show IsoDepInfo, IsoDepTag;
 export 'src/tag/mifare_classic.dart'
     show MifareClassicInfo, MifareClassicTag, MifareKeyType, MifareAuthException;
+export 'src/tag/mifare_info.dart'
+    show MifareFamily, mifareFamilyFromSak, mifareFamilyLabel;
 export 'src/tag/tag_driver.dart' show TagDriver, TagInfo, UnrecognizedTagException;
-export 'src/tag/tag_info.dart' show CapabilityContainer, ChipVersion;
+export 'src/tag/tag_info.dart' show CapabilityContainer, ChipVersion, ultralightModelName;
 export 'src/tag/type2.dart' show Type2Tag, Type2TagInfo;
