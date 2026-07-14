@@ -20,11 +20,21 @@ class CcidTransportBackend {
 
   NfcFTransport nfcF() => _CcidNfcFTransport(card);
 
-  /// Async: must poll the card (PN532 InListPassiveTarget) for ATQA/SAK/UID.
+  /// Async: polls (PN532 `InListPassiveTarget`) for the card's identity,
+  /// because [MifareClassicTransport] exposes uid/atqa/sak as sync getters.
+  ///
+  /// The poll is best-effort. It rides the `FF 00 00 00` escape command,
+  /// which is ACS-specific and which a generic CCID reader may reject
+  /// outright. MIFARE's actual operations (Load Key `FF82`, General
+  /// Authenticate `FF86`, Read Binary `FFB0`) are standard PC/SC Part 3
+  /// pseudo-APDUs needing no such dialect -- so a reader that cannot poll
+  /// still gets a fully working MIFARE driver, just without identity fields.
   Future<MifareClassicTransport> mifareClassic() async {
-    final target = await pollTypeA(card);
-    if (target == null) {
-      throw const TagLostException('No Type A target answered the poll');
+    PassiveTargetTypeA? target;
+    try {
+      target = await pollTypeA(card);
+    } catch (_) {
+      target = null;
     }
     return _CcidMifareClassicTransport(card, target);
   }
@@ -91,20 +101,20 @@ class _CcidType2Transport implements Type2Transport {
 
 class _CcidMifareClassicTransport implements MifareClassicTransport {
   final CcidCard card;
-  final PassiveTargetTypeA target;
+  final PassiveTargetTypeA? target;
 
   static const int _keySlot = 0x00;
 
   _CcidMifareClassicTransport(this.card, this.target);
 
   @override
-  Uint8List get uid => target.uid;
+  Uint8List get uid => target?.uid ?? Uint8List(0);
 
   @override
-  Uint8List get atqa => target.atqa;
+  Uint8List get atqa => target?.atqa ?? Uint8List(0);
 
   @override
-  int get sak => target.sak;
+  int get sak => target?.sak ?? 0;
 
   @override
   Future<void> authenticate(

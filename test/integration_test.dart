@@ -203,6 +203,63 @@ void main() {
         ]),
       );
     });
+
+    test(
+        'CRITICAL regression: identifyTag() resolves a MIFARE Classic ATR '
+        'to MifareClassicTag -- NOT IsoDepTag -- even when the reader '
+        'rejects the PN532 identity poll outright, and the resulting '
+        'driver still authenticates and reads (MIFARE\'s Load Key/General '
+        'Authenticate/Read Binary are standard PC/SC Part 3 pseudo-APDUs '
+        'needing no PN532 dialect). Before the fix: the ATR branch caught '
+        'the poll failure and fell through to capability probing, whose '
+        'ISO-DEP SELECT probe only checks that *some* >=4-hex-char '
+        "response came back -- a 2-byte error SW like '6D00' satisfies "
+        'that check just as well as a real SELECT response, so a MIFARE '
+        'card behind a reader that answers everything unsupported with '
+        "'6D00' was silently misidentified as a generic ISO-DEP card with "
+        'an empty UID and no exception raised.', () async {
+      final atr = Uint8List.fromList([
+        0x3B, 0x8F, 0x80, 0x01, //
+        0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0x00, 0x01,
+      ]);
+      final card = CcidCard('fake-reader', atr: atr);
+
+      final block0 = List.filled(16, 0x11);
+
+      final fake = _FakeCcidPlatform({
+        // Instruction not supported -- what a generic (non-ACS) CCID
+        // reader lacking the PN532 escape dialect returns for the identity
+        // poll, and (per the finding) for any other command it doesn't
+        // recognize either, including a raw ISO-DEP SELECT -- which is
+        // exactly the trap the old capability-probing fallback fell into.
+        'FF00000004D44A0100': '6D00',
+        '00A4040000': '6D00',
+        'FF82000006FFFFFFFFFFFF': '9000',
+        'FF860000050100006000': '9000',
+        'FFB0000010': '${hex.encode(block0)}9000',
+      });
+      NfcHubPlatform.instance = fake;
+
+      final driver = await identifyTag(card);
+
+      expect(driver, isA<MifareClassicTag>());
+      expect(driver, isNot(isA<IsoDepTag>()));
+
+      final mifare = driver as MifareClassicTag;
+      await mifare.authenticateWithDefaultKeys(0);
+      final block = await mifare.readBlock(0);
+      expect(block, equals(block0));
+
+      // Identity is unavailable (the poll never answered), but the ATR
+      // still positively identified the family -- readTagInfo() reports an
+      // empty UID rather than throwing.
+      final info = await mifare.readTagInfo();
+      expect(info.uid, isEmpty);
+
+      // The SELECT probe must never even have been sent: the ATR branch
+      // resolves directly, without falling through to capability probing.
+      expect(fake.requestedCapdus, isNot(contains('00A4040000')));
+    });
   });
 
   group('FeliCa', () {
@@ -481,18 +538,16 @@ void main() {
         "identifyTag() carried through to the probing fallback, proving "
         'the ATR is threaded through even when it degrades past the ATR '
         'fast path', () async {
-      // Same MIFARE Classic 1K-shaped ATR as the MifareClassicTag case
-      // above, but this time the PN532 poll finds no target (NbTg=00) for
-      // every Type A poll attempt, so _identifyFromAtr's MIFARE branch
-      // degrades to probing (same regression covered in
-      // detection_test.dart) with this non-null ATR carried along. Every
-      // earlier probe is left unscripted (Get UID, Read CC, SELECT, and the
-      // FeliCa idm all throw and get caught), so detection falls all the
-      // way to the last-resort Type B poll.
-      final atr = Uint8List.fromList([
-        0x3B, 0x8F, 0x80, 0x01, //
-        0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0x00, 0x01,
-      ]);
+      // A too-short ATR: _identifyFromAtr bails out immediately (it needs
+      // at least 5 bytes to find the historical-bytes region), so this is
+      // now the only way a non-null ATR reaches capability probing at all.
+      // (Previously, an ATR that positively matched MIFARE Classic but
+      // whose PN532 identity poll came up empty also fell through to
+      // probing -- that regression is now fixed: see detection_test.dart's
+      // "still resolves to MifareClassicTag" case and this file's Critical
+      // regression test in the MIFARE Classic group above. The ATR is now
+      // the stronger signal and always wins once matched.)
+      final atr = Uint8List.fromList([0x3B, 0x8A]);
       final card = CcidCard('fake-reader', atr: atr);
 
       final atqb = [

@@ -59,15 +59,12 @@ Future<TagDriver?> _identifyFromAtr(
       final c0 = historicalBytes[c0Index];
       final c1 = historicalBytes[c1Index];
       if (c0 == 0x00 && (c1 == 0x01 || c1 == 0x02)) {
-        try {
-          return MifareClassicTag(await backend.mifareClassic(), atr: atr);
-        } catch (_) {
-          // The ATR says MIFARE Classic, but the card did not answer the
-          // Type A poll the transport needs. Rather than hard-failing with an
-          // opaque TagLostException, fall through to capability probing, which
-          // tries every family and reports each probe's outcome.
-          return null;
-        }
+        // The ATR is the stronger signal here: CcidTransportBackend.
+        // mifareClassic() never throws (the PN532 identity poll is
+        // best-effort and degrades to an empty uid/atqa/sak=0 on its own),
+        // so there is nothing left to catch and no reason to fall through
+        // to capability probing.
+        return MifareClassicTag(await backend.mifareClassic(), atr: atr);
       }
       if (c0 == 0x00 && c1 == 0x03) {
         return Type2Tag(backend.type2(), atr: atr);
