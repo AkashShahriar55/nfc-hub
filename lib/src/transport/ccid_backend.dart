@@ -4,8 +4,8 @@ import 'package:convert/convert.dart';
 
 import '../apdu.dart';
 import '../nfc_hub_base.dart';
-import '../pn532.dart';
 import '../tag/mifare_classic.dart' show MifareKeyType, MifareAuthException;
+import 'pn532.dart';
 import 'transport.dart';
 
 /// Builds typed transports over a card connected through a CCID / PC-SC

@@ -18,7 +18,7 @@ class TypeBInfo implements TagInfo {
 }
 
 /// Thin driver for an ISO14443-B card, found via a raw PN532 poll
-/// ([NfcBTransport], backed by `pollTypeB` in `src/pn532.dart` on CCID)
+/// ([NfcBTransport], backed by `pollTypeB` in `src/transport/pn532.dart` on CCID)
 /// rather than the ATR/capability-probing path the other families use
 /// (Type B isn't reachable through either of those). Exposes the card's
 /// ATQB plus raw ISO7816 APDU passthrough, mirroring [IsoDepTag]'s shape.

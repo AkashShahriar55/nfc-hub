@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
-import 'nfc_hub_base.dart' show CcidCard;
-import 'apdu.dart';
+import '../nfc_hub_base.dart' show CcidCard;
+import '../apdu.dart';
 
 /// A Type A target found by [pollTypeA], with its real ATQA/SAK/UID read
 /// directly from the card via the PN532's `InListPassiveTarget` command

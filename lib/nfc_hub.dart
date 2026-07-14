@@ -18,3 +18,4 @@ export 'src/tag/mifare_info.dart'
 export 'src/tag/tag_driver.dart' show TagDriver, TagInfo, UnrecognizedTagException;
 export 'src/tag/tag_info.dart' show CapabilityContainer, ChipVersion, ultralightModelName;
 export 'src/tag/type2.dart' show Type2Tag, Type2TagInfo;
+export 'src/transport/transport.dart' show TagLostException;

@@ -341,7 +341,7 @@ void main() {
       // InListPassiveTarget reply: numTargets=01, Tg=01, ATQB (12 bytes),
       // ATTRIB_RES length=00 (none) -- same shape as
       // test/tag/detection_test.dart's Type B case and
-      // test/src/pn532_test.dart's pollTypeB fixture.
+      // test/transport/pn532_test.dart's pollTypeB fixture.
       final pollResponse =
           '${'D54B0101${hex.encode(atqb)}00'.toUpperCase()}9000';
 
