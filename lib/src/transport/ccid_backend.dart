@@ -5,19 +5,22 @@ import 'package:convert/convert.dart';
 import '../apdu.dart';
 import '../nfc_hub_base.dart';
 import '../tag/mifare_classic.dart' show MifareKeyType, MifareAuthException;
+import 'backend.dart';
 import 'pn532.dart';
 import 'transport.dart';
 
 /// Builds typed transports over a card connected through a CCID / PC-SC
 /// reader. This is the ONLY place the ACR122U's PC/SC pseudo-APDU and
 /// PN532 escape dialect lives; drivers above it are transport-agnostic.
-class CcidTransportBackend {
+class CcidTransportBackend implements TransportBackend {
   final CcidCard card;
 
   CcidTransportBackend(this.card);
 
+  @override
   Type2Transport type2() => _CcidType2Transport(card);
 
+  @override
   NfcFTransport nfcF() => _CcidNfcFTransport(card);
 
   /// Async: polls (PN532 `InListPassiveTarget`) for the card's identity,
@@ -29,6 +32,7 @@ class CcidTransportBackend {
   /// Authenticate `FF86`, Read Binary `FFB0`) are standard PC/SC Part 3
   /// pseudo-APDUs needing no such dialect -- so a reader that cannot poll
   /// still gets a fully working MIFARE driver, just without identity fields.
+  @override
   Future<MifareClassicTransport> mifareClassic() async {
     PassiveTargetTypeA? target;
     try {
@@ -44,6 +48,7 @@ class CcidTransportBackend {
   /// implement at all. A reader that cannot poll still gets a working
   /// ISO-DEP driver; only the UID is unavailable. ISO 7816-4 APDUs need no
   /// reader-specific dialect, so ISO-DEP must work on ANY CCID reader.
+  @override
   Future<IsoDepTransport> isoDep() async {
     Uint8List uid;
     try {
@@ -56,6 +61,7 @@ class CcidTransportBackend {
   }
 
   /// Null if no Type B target answers.
+  @override
   Future<NfcBTransport?> nfcB() async {
     final target = await pollTypeB(card);
     if (target == null) return null;

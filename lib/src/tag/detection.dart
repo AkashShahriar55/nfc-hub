@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:convert/convert.dart';
 
 import '../nfc_hub_base.dart' show CcidCard;
+import '../transport/backend.dart';
 import '../transport/ccid_backend.dart';
 import 'felica.dart';
 import 'iso_b.dart';
@@ -24,13 +25,57 @@ import '../apdu.dart';
 /// probe that was tried, so a caller displaying `toString()` on-screen has
 /// enough to diagnose a detection failure without separate log access.
 Future<TagDriver> identifyTag(CcidCard card) async {
-  final backend = CcidTransportBackend(card);
-  final atr = card.atr;
-  if (atr != null) {
-    final fromAtr = await _identifyFromAtr(card, backend, atr);
+  return identifyFromBackend(CcidTransportBackend(card), atr: card.atr);
+}
+
+/// Identifies the tag family reachable through [backend] and returns the
+/// matching typed driver.
+///
+/// With a non-null [hint], the caller already knows the tag family (e.g.
+/// the Android source derives it from `Tag.getTechList()`) and the matching
+/// driver is built directly -- no ATR match, no probing.
+///
+/// With a null [hint], runs the existing ATR-match -> probing chain. That
+/// path is CCID-specific (probing sends PC/SC pseudo-APDUs), so [backend]
+/// must be a [CcidTransportBackend] in that case.
+Future<TagDriver> identifyFromBackend(
+  TransportBackend backend, {
+  Uint8List? atr,
+  TagTechHint? hint,
+}) async {
+  if (hint != null) {
+    switch (hint) {
+      case TagTechHint.type2:
+        return Type2Tag(backend.type2(), atr: atr);
+      case TagTechHint.mifareClassic:
+        return MifareClassicTag(await backend.mifareClassic(), atr: atr);
+      case TagTechHint.felica:
+        return FelicaTag(backend.nfcF(), atr: atr);
+      case TagTechHint.isoDep:
+        return IsoDepTag(await backend.isoDep());
+      case TagTechHint.typeB:
+        final nfcB = await backend.nfcB();
+        if (nfcB == null) {
+          throw const UnrecognizedTagException(
+              'Type B hinted but no Type B target present');
+        }
+        return TypeBTag(nfcB, atr: atr);
+    }
+  }
+
+  // Null-hint identification requires probing, which is CCID-specific.
+  if (backend is! CcidTransportBackend) {
+    throw ArgumentError(
+        'identifyFromBackend without a hint requires a CcidTransportBackend '
+        '(probing uses PC/SC pseudo-APDUs). Android sources must pass a hint.');
+  }
+  final card = backend.card;
+  final atrToUse = atr;
+  if (atrToUse != null) {
+    final fromAtr = await _identifyFromAtr(card, backend, atrToUse);
     if (fromAtr != null) return fromAtr;
   }
-  return _identifyByProbing(card, backend, atr);
+  return _identifyByProbing(card, backend, atrToUse);
 }
 
 Future<TagDriver?> _identifyFromAtr(
