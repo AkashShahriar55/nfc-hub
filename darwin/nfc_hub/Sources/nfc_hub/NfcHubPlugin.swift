@@ -28,7 +28,7 @@ extension Data {
     }
 }
 
-public class CcidPlugin: NSObject, FlutterPlugin {
+public class NfcHubPlugin: NSObject, FlutterPlugin {
     var cards: [String: TKSmartCard] = [:]
 
     public static func register(with registrar: FlutterPluginRegistrar) {
@@ -37,8 +37,8 @@ public class CcidPlugin: NSObject, FlutterPlugin {
         #else
         let messenger = registrar.messenger
         #endif
-        let channel = FlutterMethodChannel(name: "ccid", binaryMessenger: messenger)
-        let instance = CcidPlugin()
+        let channel = FlutterMethodChannel(name: "nfc_hub", binaryMessenger: messenger)
+        let instance = NfcHubPlugin()
         registrar.addMethodCallDelegate(instance, channel: channel)
     }
 

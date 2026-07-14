@@ -1,5 +1,5 @@
-#ifndef FLUTTER_PLUGIN_CCID_PLUGIN_C_API_H_
-#define FLUTTER_PLUGIN_CCID_PLUGIN_C_API_H_
+#ifndef FLUTTER_PLUGIN_NFC_HUB_PLUGIN_C_API_H_
+#define FLUTTER_PLUGIN_NFC_HUB_PLUGIN_C_API_H_
 
 #ifdef FLUTTER_PLUGIN_IMPL
 #define FLUTTER_PLUGIN_EXPORT __declspec(dllexport)
@@ -11,11 +11,11 @@
 extern "C" {
 #endif
 
-FLUTTER_PLUGIN_EXPORT void CcidPluginCApiRegisterWithRegistrar(
+FLUTTER_PLUGIN_EXPORT void NfcHubPluginCApiRegisterWithRegistrar(
     void *registrar);
 
 #if defined(__cplusplus)
 }  // extern "C"
 #endif
 
-#endif  // FLUTTER_PLUGIN_CCID_PLUGIN_C_API_H_
+#endif  // FLUTTER_PLUGIN_NFC_HUB_PLUGIN_C_API_H_

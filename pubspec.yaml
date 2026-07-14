@@ -27,12 +27,12 @@ flutter:
         package: com.cheqplease.nfchub
         pluginClass: NfcHubPlugin
       ios:
-        pluginClass: CcidPlugin
+        pluginClass: NfcHubPlugin
         sharedDarwinSource: true
       macos:
-        pluginClass: CcidPlugin
+        pluginClass: NfcHubPlugin
         sharedDarwinSource: true
       linux:
-        pluginClass: CcidPlugin
+        pluginClass: NfcHubPlugin
       windows:
-        pluginClass: CcidPluginCApi
+        pluginClass: NfcHubPluginCApi

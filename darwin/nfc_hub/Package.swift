@@ -4,18 +4,18 @@
 import PackageDescription
 
 let package = Package(
-    name: "ccid",
+    name: "nfc_hub",
     platforms: [
         .iOS(.v13),
         .macOS(.v10_13)
     ],
     products: [
-        .library(name: "ccid", targets: ["ccid"])
+        .library(name: "nfc_hub", targets: ["nfc_hub"])
     ],
     dependencies: [],
     targets: [
         .target(
-            name: "ccid",
+            name: "nfc_hub",
             dependencies: [],
             resources: [
             ]
