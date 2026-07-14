@@ -1,36 +1,38 @@
 import 'dart:typed_data';
 
+import 'package:convert/convert.dart';
 import 'package:nfc_hub/nfc_hub.dart';
+import 'package:nfc_hub/src/transport/transport.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-class _FakeCcidPlatform extends NfcHubPlatform {
-  final Map<String, String?> responses;
+class _FakeNfcBTransport implements NfcBTransport {
+  @override
+  final Uint8List atqb;
+  @override
+  final Uint8List pupi;
+  final Map<String, String> responses;
 
-  _FakeCcidPlatform(this.responses);
+  _FakeNfcBTransport(this.atqb, this.pupi, [this.responses = const {}]);
 
   @override
-  Future<String?> transceive(String reader, String capdu) async =>
-      responses[capdu];
-
-  @override
-  Future<List<String>> listReaders() async => ['fake-reader'];
-
-  @override
-  Future<CcidCard> connect(String reader) async => CcidCard(reader);
-
-  @override
-  Future<void> disconnect(String reader) async {}
+  Future<Uint8List> transceive(Uint8List apdu) async {
+    final capdu = hex.encode(apdu).toUpperCase();
+    final response = responses[capdu];
+    if (response == null) {
+      throw Exception('No fake response configured for capdu: $capdu');
+    }
+    return Uint8List.fromList(hex.decode(response));
+  }
 }
 
 void main() {
-  tearDown(() {
-    NfcHubPlatform.instance = null;
-  });
-
   test('transceive() passes the APDU straight through to the card',
       () async {
-    NfcHubPlatform.instance = _FakeCcidPlatform({'00B0000000': 'AABB9000'});
-    final tag = TypeBTag(CcidCard('fake-reader'), Uint8List(12));
+    final tag = TypeBTag(_FakeNfcBTransport(
+      Uint8List(12),
+      Uint8List(4),
+      {'00B0000000': 'AABB9000'},
+    ));
 
     final response = await tag.transceive('00B0000000');
 
@@ -39,7 +41,7 @@ void main() {
 
   test('stores the ATQB it was constructed with', () {
     final atqb = Uint8List.fromList(List.filled(12, 0x11));
-    final tag = TypeBTag(CcidCard('fake-reader'), atqb);
+    final tag = TypeBTag(_FakeNfcBTransport(atqb, Uint8List(4)));
 
     expect(tag.atqb, equals(atqb));
   });
@@ -47,7 +49,8 @@ void main() {
   test('readTagInfo() extracts the PUPI from ATQB', () async {
     final atqb = Uint8List.fromList(
         [0x50, 0x11, 0x22, 0x33, 0x44, 0, 0, 0, 0, 0, 0, 0]);
-    final tag = TypeBTag(CcidCard('fake-reader'), atqb);
+    final pupi = Uint8List.fromList([0x11, 0x22, 0x33, 0x44]);
+    final tag = TypeBTag(_FakeNfcBTransport(atqb, pupi));
 
     final info = await tag.readTagInfo();
 

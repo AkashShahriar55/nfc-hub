@@ -11,7 +11,6 @@ import 'mifare_classic.dart';
 import 'tag_driver.dart';
 import 'type2.dart';
 import '../apdu.dart';
-import '../pn532.dart';
 
 /// Identifies the tag family of the card connected through [card] and
 /// returns the matching typed driver.
@@ -166,10 +165,10 @@ Future<TagDriver> _identifyByProbing(
   }
 
   try {
-    final typeBTarget = await pollTypeB(card);
-    if (typeBTarget != null) {
-      log.add('Type B poll -> succeeded, atqb=${hex.encode(typeBTarget.atqb)}');
-      return TypeBTag(card, typeBTarget.atqb);
+    final nfcB = await backend.nfcB();
+    if (nfcB != null) {
+      log.add('Type B poll -> succeeded, atqb=${hex.encode(nfcB.atqb)}');
+      return TypeBTag(nfcB);
     }
     log.add('Type B poll -> no target found');
   } catch (e) {

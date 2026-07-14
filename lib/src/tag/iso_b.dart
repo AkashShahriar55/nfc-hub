@@ -1,7 +1,9 @@
 import 'dart:typed_data';
 
-import '../nfc_hub_base.dart';
+import 'package:convert/convert.dart';
+
 import 'tag_driver.dart';
+import '../transport/transport.dart';
 
 class TypeBInfo implements TagInfo {
   @override
@@ -16,26 +18,31 @@ class TypeBInfo implements TagInfo {
 }
 
 /// Thin driver for an ISO14443-B card, found via a raw PN532 poll
-/// ([pollTypeB] in `src/pn532.dart`) rather than the ATR/capability-probing
-/// path the other families use (Type B isn't reachable through either of
-/// those). Exposes the card's ATQB plus raw ISO7816 APDU passthrough,
-/// mirroring [IsoDepTag]'s shape.
+/// ([NfcBTransport], backed by `pollTypeB` in `src/pn532.dart` on CCID)
+/// rather than the ATR/capability-probing path the other families use
+/// (Type B isn't reachable through either of those). Exposes the card's
+/// ATQB plus raw ISO7816 APDU passthrough, mirroring [IsoDepTag]'s shape.
 class TypeBTag extends TagDriver {
-  final CcidCard card;
-  final Uint8List atqb;
+  final NfcBTransport transport;
 
-  TypeBTag(this.card, this.atqb);
+  const TypeBTag(this.transport);
 
-  Future<String?> transceive(String capdu) => card.transceive(capdu);
+  Uint8List get atqb => transport.atqb;
+
+  Future<String?> transceive(String capdu) async {
+    final response =
+        await transport.transceive(Uint8List.fromList(hex.decode(capdu)));
+    return hex.encode(response).toUpperCase();
+  }
 
   /// A generic identification summary. UID is the PUPI (bytes 1-4 of
   /// ATQB, per ISO14443-3's ATQB structure: `'50' | PUPI(4) | ...`).
   @override
   Future<TypeBInfo> readTagInfo() async {
     return TypeBInfo(
-      uid: Uint8List.sublistView(atqb, 1, 5),
-      atr: card.atr,
-      atqb: atqb,
+      uid: transport.pupi,
+      atr: null, // restored by identifyTag in Task 8
+      atqb: transport.atqb,
     );
   }
 }

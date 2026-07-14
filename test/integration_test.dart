@@ -326,4 +326,68 @@ void main() {
       );
     });
   });
+
+  group('Type B', () {
+    test(
+        'identifyTag() detects an ISO14443-B tag via the last-resort PN532 '
+        'poll after every earlier probe fails, and the resulting driver '
+        'reads back a decoded ATQB/PUPI and passes an APDU through', () async {
+      // ATQB, per ISO14443-3: '50' | PUPI(4) | AppData(4) | ProtocolInfo(3).
+      final atqb = [
+        0x50, 0xAA, 0xBB, 0xCC, 0xDD, //
+        0x01, 0x02, 0x03, 0x04, //
+        0x05, 0x06, 0x07,
+      ];
+      // InListPassiveTarget reply: numTargets=01, Tg=01, ATQB (12 bytes),
+      // ATTRIB_RES length=00 (none) -- same shape as
+      // test/tag/detection_test.dart's Type B case and
+      // test/src/pn532_test.dart's pollTypeB fixture.
+      final pollResponse =
+          '${'D54B0101${hex.encode(atqb)}00'.toUpperCase()}9000';
+
+      final fake = _FakeCcidPlatform({
+        // Every earlier probe (Get UID, Read CC, SELECT, MIFARE's PN532
+        // Type A poll, FeliCa's Get UID) is left unmapped -- the fake
+        // throws for each and detection's own try/catch (or
+        // _tryTransceive) treats that as "no match", same pattern as
+        // detection_test.dart's Type B regression test -- so identifyTag()
+        // falls all the way through to the last-resort Type B poll.
+        'FF00000004D44A0103': pollResponse,
+        // A raw APDU passed through once the driver is constructed.
+        '00B0000000': 'AABB9000',
+      });
+      NfcHubPlatform.instance = fake;
+
+      final card = CcidCard('fake-reader');
+      final driver = await identifyTag(card);
+
+      expect(driver, isA<TypeBTag>());
+      final tag = driver as TypeBTag;
+
+      final info = await tag.readTagInfo();
+      expect(info.uid, equals([0xAA, 0xBB, 0xCC, 0xDD]));
+      expect(info.atqb, equals(atqb));
+
+      final response = await tag.transceive('00B0000000');
+      expect(response, equals('AABB9000'));
+
+      // Guards the wire format end to end: every earlier probe (Get UID,
+      // Read CC, SELECT, MIFARE's Type A poll, FeliCa's Get UID) runs and
+      // fails first -- proving Type B really is the last-resort fallback
+      // -- and only then does the last-resort poll use brTy=0x03 (Type B),
+      // not 0x00 (Type A).
+      expect(
+        fake.requestedCapdus,
+        containsAllInOrder([
+          'FFCA000000', // Get UID probe
+          'FFB0000304', // Read CC probe
+          '00A4040000', // SELECT probe
+          'FF00000004D44A0100', // MIFARE's Type A poll
+          'FFCA000000', // FeliCa's Get UID (idm)
+          'FF00000004D44A0103', // Type B poll (brTy=0x03)
+          '00B0000000', // post-construction APDU passthrough
+        ]),
+      );
+    });
+  });
 }
