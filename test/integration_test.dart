@@ -390,4 +390,148 @@ void main() {
       );
     });
   });
+
+  group('ATR restoration (Task 8)', () {
+    // Tasks 3-7 moved Type2Tag, MifareClassicTag, FelicaTag, and TypeBTag
+    // onto typed transports, and each one lost its ATR in the process
+    // (hardcoded to null). Task 8 has identifyTag() -- which holds the
+    // CcidCard and therefore the real ATR -- inject it back into the driver
+    // at construction time. These tests prove readTagInfo().atr actually
+    // carries the card's ATR through identifyTag(), for all five driver
+    // families (four restored here, plus IsoDepTag's pre-existing path via
+    // transport.historicalBytes for completeness).
+
+    test('Type2Tag: readTagInfo().atr matches the ATR identifyTag() '
+        'resolved it from', () async {
+      // Same Type 2-shaped ATR as detection_test.dart's ATR-fast-path case.
+      final atr = Uint8List.fromList([
+        0x3B, 0x8F, 0x80, 0x01, //
+        0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0x00, 0x03,
+      ]);
+      final card = CcidCard('fake-reader', atr: atr);
+
+      NfcHubPlatform.instance = _FakeCcidPlatform({
+        'FFCA000000': '040102039000', // readUid()
+        'FFB0000304': 'E11006009000', // readCapabilityContainer()
+      });
+
+      final driver = await identifyTag(card);
+
+      expect(driver, isA<Type2Tag>());
+      final info = await (driver as Type2Tag).readTagInfo();
+      expect(info.atr, equals(atr));
+    });
+
+    test('MifareClassicTag: readTagInfo().atr matches the ATR identifyTag() '
+        'resolved it from', () async {
+      // Same MIFARE Classic 1K-shaped ATR as detection_test.dart's
+      // ATR-fast-path case.
+      final atr = Uint8List.fromList([
+        0x3B, 0x8F, 0x80, 0x01, //
+        0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0x00, 0x01,
+      ]);
+      final card = CcidCard('fake-reader', atr: atr);
+
+      // PN532 poll (Type A): ATQA 0004, SAK 08 (1K), UID 01020304 -- the
+      // transport build itself does this I/O when constructed from the ATR
+      // fast path.
+      NfcHubPlatform.instance = _FakeCcidPlatform({
+        'FF00000004D44A0100': 'D54B010100040804010203049000',
+      });
+
+      final driver = await identifyTag(card);
+
+      expect(driver, isA<MifareClassicTag>());
+      final info = await (driver as MifareClassicTag).readTagInfo();
+      expect(info.atr, equals(atr));
+    });
+
+    test(
+        'FelicaTag: readTagInfo().atr matches the ATR identifyTag() '
+        'resolved it from', () async {
+      // Same FeliCa-shaped ATR as this file's own FeliCa group above.
+      final atr = Uint8List.fromList([
+        0x3B, 0x8F, 0x80, 0x01, //
+        0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0xF0, 0x11,
+      ]);
+      final card = CcidCard('fake-reader', atr: atr);
+
+      // readTagInfo() awaits both idm (Get UID pseudo-APDU) and pmm (a
+      // FeliCa polling command wrapped in the PN532 InDataExchange escape)
+      // unconditionally, so both must be scripted.
+      NfcHubPlatform.instance = _FakeCcidPlatform({
+        'FFCA000000': 'AABBCCDDEE0011229000', // idm
+        // FeliCa polling frame (cmd 0x00, wildcard system code, no request
+        // code, time slot 0) wrapped in D4 40 01 -> response:
+        // D5 41 00 (InDataExchange success) + len | respCode=01 | idm(8) |
+        // pmm(8).
+        'FF00000009D440010600FFFF0000':
+            'D541001101AABBCCDDEE00112201020304050607089000',
+      });
+
+      final driver = await identifyTag(card);
+
+      expect(driver, isA<FelicaTag>());
+      final info = await (driver as FelicaTag).readTagInfo();
+      expect(info.atr, equals(atr));
+    });
+
+    test(
+        'TypeBTag: readTagInfo().atr matches the (non-matching) ATR '
+        "identifyTag() carried through to the probing fallback, proving "
+        'the ATR is threaded through even when it degrades past the ATR '
+        'fast path', () async {
+      // Same MIFARE Classic 1K-shaped ATR as the MifareClassicTag case
+      // above, but this time the PN532 poll finds no target (NbTg=00) for
+      // every Type A poll attempt, so _identifyFromAtr's MIFARE branch
+      // degrades to probing (same regression covered in
+      // detection_test.dart) with this non-null ATR carried along. Every
+      // earlier probe is left unscripted (Get UID, Read CC, SELECT, and the
+      // FeliCa idm all throw and get caught), so detection falls all the
+      // way to the last-resort Type B poll.
+      final atr = Uint8List.fromList([
+        0x3B, 0x8F, 0x80, 0x01, //
+        0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0x00, 0x01,
+      ]);
+      final card = CcidCard('fake-reader', atr: atr);
+
+      final atqb = [
+        0x50, 0xAA, 0xBB, 0xCC, 0xDD, //
+        0x01, 0x02, 0x03, 0x04, //
+        0x05, 0x06, 0x07,
+      ];
+      final pollResponse =
+          '${'D54B0101${hex.encode(atqb)}00'.toUpperCase()}9000';
+
+      NfcHubPlatform.instance = _FakeCcidPlatform({
+        'FF00000004D44A0100': 'D54B009000', // Type A poll: no target found.
+        'FF00000004D44A0103': pollResponse, // Type B poll: target found.
+      });
+
+      final driver = await identifyTag(card);
+
+      expect(driver, isA<TypeBTag>());
+      final info = await (driver as TypeBTag).readTagInfo();
+      expect(info.atr, equals(atr));
+    });
+
+    test('IsoDepTag: readTagInfo().atr matches the card ATR via '
+        'transport.historicalBytes (pre-existing path, unaffected by Task '
+        '8 -- covered here so all five driver families are asserted '
+        'together)', () async {
+      final atr = Uint8List.fromList(
+          [0x3B, 0x8A, 0x80, 0x01, 0x50, 0x00, 0x00, 0x00, 0x00, 0x00]);
+      final card = CcidCard('fake-reader', atr: atr);
+
+      NfcHubPlatform.instance = _FakeCcidPlatform({
+        'FF00000004D44A0100': 'D54B009000', // PN532 poll: no target found.
+      });
+
+      final driver = await identifyTag(card);
+
+      expect(driver, isA<IsoDepTag>());
+      final info = await (driver as IsoDepTag).readTagInfo();
+      expect(info.atr, equals(atr));
+    });
+  });
 }

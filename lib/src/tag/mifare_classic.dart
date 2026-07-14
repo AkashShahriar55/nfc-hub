@@ -51,7 +51,11 @@ class MifareClassicInfo implements TagInfo {
 class MifareClassicTag extends TagDriver {
   final MifareClassicTransport transport;
 
-  const MifareClassicTag(this.transport);
+  /// The card's ATR, where the source supplies one. Null on sources that
+  /// have no ATR concept (the device's built-in NFC antenna).
+  final Uint8List? atr;
+
+  const MifareClassicTag(this.transport, {this.atr});
 
   static const List<String> _defaultKeysHex = [
     'FFFFFFFFFFFF',
@@ -117,7 +121,7 @@ class MifareClassicTag extends TagDriver {
     return MifareClassicInfo(
       technology: mifareFamilyLabel(family),
       uid: transport.uid,
-      atr: null, // restored by identifyTag in Task 8
+      atr: atr,
       sak: transport.sak,
       atqa: transport.atqa,
     );

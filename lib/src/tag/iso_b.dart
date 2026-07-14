@@ -25,7 +25,11 @@ class TypeBInfo implements TagInfo {
 class TypeBTag extends TagDriver {
   final NfcBTransport transport;
 
-  const TypeBTag(this.transport);
+  /// The card's ATR, where the source supplies one. Null on sources that
+  /// have no ATR concept (the device's built-in NFC antenna).
+  final Uint8List? atr;
+
+  const TypeBTag(this.transport, {this.atr});
 
   Uint8List get atqb => transport.atqb;
 
@@ -41,7 +45,7 @@ class TypeBTag extends TagDriver {
   Future<TypeBInfo> readTagInfo() async {
     return TypeBInfo(
       uid: transport.pupi,
-      atr: null, // restored by identifyTag in Task 8
+      atr: atr,
       atqb: transport.atqb,
     );
   }

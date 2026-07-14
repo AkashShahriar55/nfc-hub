@@ -60,7 +60,7 @@ Future<TagDriver?> _identifyFromAtr(
       final c1 = historicalBytes[c1Index];
       if (c0 == 0x00 && (c1 == 0x01 || c1 == 0x02)) {
         try {
-          return MifareClassicTag(await backend.mifareClassic());
+          return MifareClassicTag(await backend.mifareClassic(), atr: atr);
         } catch (_) {
           // The ATR says MIFARE Classic, but the card did not answer the
           // Type A poll the transport needs. Rather than hard-failing with an
@@ -70,10 +70,10 @@ Future<TagDriver?> _identifyFromAtr(
         }
       }
       if (c0 == 0x00 && c1 == 0x03) {
-        return Type2Tag(backend.type2());
+        return Type2Tag(backend.type2(), atr: atr);
       }
       if (c0 == 0xF0 && (c1 == 0x11 || c1 == 0x12)) {
-        return FelicaTag(backend.nfcF());
+        return FelicaTag(backend.nfcF(), atr: atr);
       }
     }
   }
@@ -82,10 +82,10 @@ Future<TagDriver?> _identifyFromAtr(
   // above didn't produce a match (RID absent entirely, or its trailing
   // bytes were missing/unrecognized).
   if (historicalBytes.contains(0x11)) {
-    return FelicaTag(backend.nfcF());
+    return FelicaTag(backend.nfcF(), atr: atr);
   }
   if (historicalBytes.contains(0x03)) {
-    return Type2Tag(backend.type2());
+    return Type2Tag(backend.type2(), atr: atr);
   }
   // A real ATS-derived ATR (not a PC/SC Part 3 synchronous-card pseudo-ATR)
   // with none of the above markers: treat as a generic processor card.
@@ -138,7 +138,7 @@ Future<TagDriver> _identifyByProbing(
   final ccData = stripAndCheckSw(ccResponse);
   log.add('Read CC -> ${ccResponse ?? 'no response'}');
   if (ccData != null && ccData.length == 4 && ccData[0] == 0xE1) {
-    return Type2Tag(backend.type2());
+    return Type2Tag(backend.type2(), atr: atr);
   }
 
   final selectResponse = await _tryTransceive(card, '00A4040000');
@@ -148,14 +148,14 @@ Future<TagDriver> _identifyByProbing(
   }
 
   try {
-    final mifare = MifareClassicTag(await backend.mifareClassic());
+    final mifare = MifareClassicTag(await backend.mifareClassic(), atr: atr);
     await mifare.authenticateWithDefaultKeys(0);
     return mifare;
   } catch (e) {
     log.add('MIFARE default-key auth -> failed: $e');
   }
 
-  final felica = FelicaTag(backend.nfcF());
+  final felica = FelicaTag(backend.nfcF(), atr: atr);
   try {
     final idm = await felica.idm;
     log.add('FeliCa idm -> succeeded, idm=${hex.encode(idm)}');
@@ -168,7 +168,7 @@ Future<TagDriver> _identifyByProbing(
     final nfcB = await backend.nfcB();
     if (nfcB != null) {
       log.add('Type B poll -> succeeded, atqb=${hex.encode(nfcB.atqb)}');
-      return TypeBTag(nfcB);
+      return TypeBTag(nfcB, atr: atr);
     }
     log.add('Type B poll -> no target found');
   } catch (e) {

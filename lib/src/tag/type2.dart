@@ -27,7 +27,11 @@ class Type2TagInfo implements TagInfo {
 class Type2Tag extends TagDriver {
   final Type2Transport transport;
 
-  const Type2Tag(this.transport);
+  /// The card's ATR, where the source supplies one. Null on sources that
+  /// have no ATR concept (the device's built-in NFC antenna).
+  final Uint8List? atr;
+
+  const Type2Tag(this.transport, {this.atr});
 
   /// Reads the NDEF message from the tag.
   ///
@@ -65,7 +69,7 @@ class Type2Tag extends TagDriver {
     return Type2TagInfo(
       technology: 'NFC Forum Type 2 (MIFARE Ultralight/NTAG)',
       uid: tagUid,
-      atr: null,
+      atr: atr,
       capabilityContainer: cc,
     );
   }

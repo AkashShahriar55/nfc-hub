@@ -50,7 +50,11 @@ class FelicaInfo implements TagInfo {
 class FelicaTag extends TagDriver {
   final NfcFTransport transport;
 
-  const FelicaTag(this.transport);
+  /// The card's ATR, where the source supplies one. Null on sources that
+  /// have no ATR concept (the device's built-in NFC antenna).
+  final Uint8List? atr;
+
+  const FelicaTag(this.transport, {this.atr});
 
   /// The card's 8-byte IDm.
   Future<Uint8List> get idm => transport.idm;
@@ -78,7 +82,7 @@ class FelicaTag extends TagDriver {
     return FelicaInfo(
       technology: model == null ? 'FeliCa' : 'FeliCa ($model)',
       uid: cardIdm,
-      atr: null, // restored by identifyTag in Task 8
+      atr: atr,
       pmm: cardPmm,
       modelName: model,
       systemCodes: systemCodes,
