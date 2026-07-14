@@ -9,7 +9,7 @@ import 'platform_interface.dart';
 class MethodChannelCcid extends CcidPlatform {
   /// The method channel used to interact with the native platform.
   @visibleForTesting
-  final methodChannel = const MethodChannel('ccid');
+  final methodChannel = const MethodChannel('nfc_hub');
 
   @override
   Future<List<String>> listReaders() async {

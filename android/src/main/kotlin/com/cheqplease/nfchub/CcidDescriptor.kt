@@ -1,4 +1,4 @@
-package im.nfc.ccid
+package com.cheqplease.nfchub
 
 data class CcidDescriptor(
     val protocols: Byte,

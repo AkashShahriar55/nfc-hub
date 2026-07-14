@@ -1,4 +1,4 @@
-package im.nfc.ccid
+package com.cheqplease.nfchub
 
 import android.hardware.usb.UsbDeviceConnection
 import android.hardware.usb.UsbEndpoint

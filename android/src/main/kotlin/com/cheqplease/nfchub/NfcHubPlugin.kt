@@ -1,4 +1,4 @@
-package im.nfc.ccid
+package com.cheqplease.nfchub
 
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
@@ -17,8 +17,8 @@ import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
 
 
-/** CcidPlugin */
-class CcidPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
+/** NfcHubPlugin */
+class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     private lateinit var channel: MethodChannel
     private lateinit var context: Context
     private lateinit var usbManager: UsbManager
@@ -70,7 +70,7 @@ class CcidPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     }
 
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
-        channel = MethodChannel(flutterPluginBinding.binaryMessenger, "ccid")
+        channel = MethodChannel(flutterPluginBinding.binaryMessenger, "nfc_hub")
         channel.setMethodCallHandler(this)
     }
 
@@ -293,7 +293,7 @@ class CcidPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
 
     companion object {
         private val TAG = FlutterPlugin::class.java.name
-        private const val ACTION_USB_PERMISSION = "im.nfc.ccid.USB_PERMISSION"
+        private const val ACTION_USB_PERMISSION = "com.cheqplease.nfchub.USB_PERMISSION"
     }
 
     private data class Reader(

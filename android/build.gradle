@@ -11,11 +11,11 @@ allprojects {
     }
 }
 
-group 'im.nfc.ccid'
+group 'com.cheqplease.nfchub'
 
 android {
     if (project.android.hasProperty("namespace")) {
-        namespace 'im.nfc.ccid'
+        namespace 'com.cheqplease.nfchub'
     }
 
     compileSdk 35

@@ -24,8 +24,8 @@ flutter:
   plugin:
     platforms:
       android:
-        package: im.nfc.ccid
-        pluginClass: CcidPlugin
+        package: com.cheqplease.nfchub
+        pluginClass: NfcHubPlugin
       ios:
         pluginClass: CcidPlugin
         sharedDarwinSource: true
