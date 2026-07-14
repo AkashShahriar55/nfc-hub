@@ -28,13 +28,14 @@ Future<TagDriver> identifyTag(CcidCard card) async {
   final backend = CcidTransportBackend(card);
   final atr = card.atr;
   if (atr != null) {
-    final fromAtr = _identifyFromAtr(card, backend, atr);
+    final fromAtr = await _identifyFromAtr(card, backend, atr);
     if (fromAtr != null) return fromAtr;
   }
   return _identifyByProbing(card, backend, atr);
 }
 
-TagDriver? _identifyFromAtr(CcidCard card, CcidTransportBackend backend, Uint8List atr) {
+Future<TagDriver?> _identifyFromAtr(
+    CcidCard card, CcidTransportBackend backend, Uint8List atr) async {
   if (atr.length < 5) return null;
   final historicalBytes = atr.sublist(4);
 
@@ -59,7 +60,7 @@ TagDriver? _identifyFromAtr(CcidCard card, CcidTransportBackend backend, Uint8Li
       final c0 = historicalBytes[c0Index];
       final c1 = historicalBytes[c1Index];
       if (c0 == 0x00 && (c1 == 0x01 || c1 == 0x02)) {
-        return MifareClassicTag(card);
+        return MifareClassicTag(await backend.mifareClassic());
       }
       if (c0 == 0x00 && c1 == 0x03) {
         return Type2Tag(backend.type2());
@@ -139,8 +140,8 @@ Future<TagDriver> _identifyByProbing(
     return IsoDepTag(card);
   }
 
-  final mifare = MifareClassicTag(card);
   try {
+    final mifare = MifareClassicTag(await backend.mifareClassic());
     await mifare.authenticateWithDefaultKeys(0);
     return mifare;
   } catch (e) {

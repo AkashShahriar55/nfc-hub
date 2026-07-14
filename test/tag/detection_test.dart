@@ -55,6 +55,13 @@ void main() {
         0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0x00, 0x01,
       ]);
       final card = CcidCard('fake-reader', atr: atr);
+      // The ATR alone identifies the family, but building a MifareClassicTag
+      // now also requires a real PN532 poll (MifareClassicTransport exposes
+      // uid/atqa/sak as sync getters) -- script its response: ATQA 0004,
+      // SAK 08 (1K), UID 01020304.
+      NfcHubPlatform.instance = _FakeCcidPlatform({
+        'FF00000004D44A0100': 'D54B010100040804010203049000',
+      });
 
       final driver = await identifyTag(card);
 
@@ -67,6 +74,10 @@ void main() {
         0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0x00, 0x02,
       ]);
       final card = CcidCard('fake-reader', atr: atr);
+      // Same as above, but SAK 18 (4K).
+      NfcHubPlatform.instance = _FakeCcidPlatform({
+        'FF00000004D44A0100': 'D54B010100041804010203049000',
+      });
 
       final driver = await identifyTag(card);
 

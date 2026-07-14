@@ -100,4 +100,75 @@ void main() {
       );
     });
   });
+
+  group('MIFARE Classic', () {
+    test(
+        'identifyTag() detects a MIFARE Classic 1K tag by capability probing '
+        'and the resulting driver authenticates and reads back a decoded '
+        'sector', () async {
+      // InListPassiveTarget reply: numTargets=01, Tg=01, ATQA=0004, SAK=08
+      // (1K), UID=04AABBCC.
+      const pollResponse = 'D54B01010004080404AABBCC9000';
+
+      final block0 = List.filled(16, 0x11);
+      final block1 = List.filled(16, 0x22);
+      final block2 = List.filled(16, 0x33);
+      final block3 = List.filled(16, 0x44);
+
+      final fake = _FakeCcidPlatform({
+        // No 'FFCA000000' or '00A4040000' entries: identifyTag's Get UID and
+        // SELECT probes are allowed to fail (they're ISO14443-A/ISO-DEP
+        // specific, not the PN532 poll MIFARE actually relies on), so the
+        // fake throws for them and detection's _tryTransceive() catches
+        // that and moves on -- same pattern as detection_test.dart's FeliCa
+        // fallback regression test.
+        'FFB0000304': '6A82', // Read CC fails -> not a Type 2 tag.
+        'FF00000004D44A0100': pollResponse, // PN532 poll (Type A).
+        'FF82000006FFFFFFFFFFFF': '9000', // Load Key (default key A).
+        'FF860000050100006000': '9000', // General Authenticate, block 0.
+        'FFB0000010': '${hex.encode(block0)}9000',
+        'FFB0000110': '${hex.encode(block1)}9000',
+        'FFB0000210': '${hex.encode(block2)}9000',
+        'FFB0000310': '${hex.encode(block3)}9000',
+      });
+      NfcHubPlatform.instance = fake;
+
+      // No ATR: falls back to capability probing, same as the Type 2 group
+      // above -- exercising the same detection path a real headless CCID
+      // connect would take. The probe order (Type 2 CC, ISO-DEP SELECT,
+      // then MIFARE) means both prior probes must fail first.
+      final card = CcidCard('fake-reader');
+      final driver = await identifyTag(card);
+
+      expect(driver, isA<MifareClassicTag>());
+      final tag = driver as MifareClassicTag;
+
+      await tag.authenticateWithDefaultKeys(0);
+      final blocks = await tag.readSector(0);
+
+      expect(blocks, hasLength(4));
+      expect(blocks[0], equals(block0));
+      expect(blocks[1], equals(block1));
+      expect(blocks[2], equals(block2));
+      expect(blocks[3], equals(block3));
+
+      // Guards the wire format end to end: the PN532 poll, then Load Key
+      // (slot 00, the default key A as uppercase hex) and General
+      // Authenticate (block 00, key type A = 0x60, slot 00) pseudo-APDUs
+      // the backend must send for authenticateWithDefaultKeys(0), and the
+      // READ BINARY reads for all 4 blocks of sector 0.
+      expect(
+        fake.requestedCapdus,
+        containsAllInOrder([
+          'FF00000004D44A0100',
+          'FF82000006FFFFFFFFFFFF',
+          'FF860000050100006000',
+          'FFB0000010',
+          'FFB0000110',
+          'FFB0000210',
+          'FFB0000310',
+        ]),
+      );
+    });
+  });
 }

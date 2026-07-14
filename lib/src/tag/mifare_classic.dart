@@ -4,9 +4,7 @@ import 'package:convert/convert.dart';
 
 import 'mifare_info.dart';
 import 'tag_driver.dart';
-import '../apdu.dart';
-import '../nfc_hub_base.dart';
-import '../pn532.dart';
+import '../transport/transport.dart';
 
 /// Which MIFARE Classic key slot (A or B) to authenticate with.
 enum MifareKeyType { a, b }
@@ -47,12 +45,13 @@ class MifareClassicInfo implements TagInfo {
 ///
 /// Reads require authenticating the target sector first, via [authenticate]
 /// or [authenticateWithDefaultKeys]. The reader performs the MIFARE stream
-/// cipher itself; this driver only sends the PC/SC "Load Keys" and "General
-/// Authenticate" pseudo-APDUs (PC/SC Part 3).
+/// cipher itself; this driver only calls into [transport], which sends the
+/// PC/SC "Load Keys" and "General Authenticate" pseudo-APDUs (PC/SC Part 3)
+/// on CCID.
 class MifareClassicTag extends TagDriver {
-  final CcidCard card;
+  final MifareClassicTransport transport;
 
-  MifareClassicTag(this.card);
+  const MifareClassicTag(this.transport);
 
   static const List<String> _defaultKeysHex = [
     'FFFFFFFFFFFF',
@@ -60,8 +59,6 @@ class MifareClassicTag extends TagDriver {
     'D3F7D3F7D3F7',
     '000000000000',
   ];
-
-  static const int _keySlot = 0x00;
 
   /// Loads [key] (6 bytes) into the reader and authenticates [sector] with
   /// it as key [keyType].
@@ -71,14 +68,8 @@ class MifareClassicTag extends TagDriver {
     int sector,
     MifareKeyType keyType,
     Uint8List key,
-  ) async {
-    if (key.length != 6) {
-      throw ArgumentError(
-          'MIFARE Classic keys are 6 bytes, got ${key.length}');
-    }
-    await _loadKey(key);
-    await _generalAuthenticate(_blockForSector(sector), keyType);
-  }
+  ) =>
+      transport.authenticate(sector, keyType, key);
 
   /// Tries each of a short list of well-known default MIFARE Classic keys
   /// (as key A) against [sector], succeeding on the first that works.
@@ -104,15 +95,12 @@ class MifareClassicTag extends TagDriver {
 
   /// Reads one 16-byte block. The block's sector must already be
   /// authenticated via [authenticate] or [authenticateWithDefaultKeys].
-  Future<Uint8List> readBlock(int block) {
-    final blockHex = block.toRadixString(16).padLeft(2, '0');
-    return transceiveChecked(card, 'FFB000${blockHex}10');
-  }
+  Future<Uint8List> readBlock(int block) => transport.readBlock(block);
 
   /// Reads every block in [sector] (4 blocks on a 1K/4K tag). The sector
   /// must already be authenticated.
   Future<List<Uint8List>> readSector(int sector) async {
-    final firstBlock = _blockForSector(sector);
+    final firstBlock = sector * 4;
     final blocks = <Uint8List>[];
     for (var block = firstBlock; block < firstBlock + 4; block++) {
       blocks.add(await readBlock(block));
@@ -120,44 +108,18 @@ class MifareClassicTag extends TagDriver {
     return blocks;
   }
 
-  /// A generic identification summary using the real SAK/ATQA read
-  /// directly from the card via a PN532 poll, independent of the ATR.
+  /// A generic identification summary using the real SAK/ATQA/UID the
+  /// transport already carries from the poll it performed when it was
+  /// built.
   @override
   Future<MifareClassicInfo> readTagInfo() async {
-    final target = await pollTypeA(card);
-    if (target == null) {
-      throw Exception('No Type A target found while reading tag info');
-    }
-    final family = mifareFamilyFromSak(target.sak);
+    final family = mifareFamilyFromSak(transport.sak);
     return MifareClassicInfo(
       technology: mifareFamilyLabel(family),
-      uid: target.uid,
-      atr: card.atr,
-      sak: target.sak,
-      atqa: target.atqa,
+      uid: transport.uid,
+      atr: null, // restored by identifyTag in Task 8
+      sak: transport.sak,
+      atqa: transport.atqa,
     );
-  }
-
-  int _blockForSector(int sector) => sector * 4;
-
-  Future<void> _loadKey(Uint8List key) async {
-    final keyHex = hex.encode(key).toUpperCase();
-    final slotHex = _keySlot.toRadixString(16).padLeft(2, '0');
-    final capdu = 'FF8200${slotHex}06$keyHex';
-    final response = await card.transceive(capdu);
-    if (stripAndCheckSw(response) == null) {
-      throw MifareAuthException('Failed to load key into reader');
-    }
-  }
-
-  Future<void> _generalAuthenticate(int block, MifareKeyType keyType) async {
-    final blockHex = block.toRadixString(16).padLeft(2, '0');
-    final keyTypeHex = keyType == MifareKeyType.a ? '60' : '61';
-    final slotHex = _keySlot.toRadixString(16).padLeft(2, '0');
-    final capdu = 'FF860000050100$blockHex$keyTypeHex$slotHex';
-    final response = await card.transceive(capdu);
-    if (stripAndCheckSw(response) == null) {
-      throw MifareAuthException('Authentication failed for block $block');
-    }
   }
 }
