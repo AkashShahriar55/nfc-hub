@@ -69,38 +69,73 @@ interfaces per tag technology. Drivers depend only on their own family's
 interface; the reader-dialect wrapping moves *down* into the CCID
 backend instead of living inside each driver.
 
+**The portability rule.** A transport primitive may be raw command bytes
+only where *the same bytes* are valid on both sides. Where the reader
+performs the operation itself — so only the *operation*, not the byte
+sequence, is portable — the transport must expose methods instead. This
+splits the five families two ways:
+
+*Raw-transceive transports* (identical frames on both sides):
+
 ```dart
 abstract class IsoDepTransport {
+  Uint8List get uid;
   /// ATR (CCID) or ISO-DEP historical bytes (Android), when available.
   Uint8List? get historicalBytes;
-  Future<Uint8List> transceive(Uint8List apdu);
-}
-
-abstract class NfcATransport {
-  Uint8List get atqa;
-  int get sak;
-  Uint8List get uid;
-  Future<Uint8List> transceive(Uint8List cmd);
+  Future<Uint8List> transceive(Uint8List apdu); // ISO 7816-4 APDU
 }
 
 abstract class NfcFTransport {
-  Future<Uint8List> transceive(Uint8List felicaCmd); // raw JIS X 6319-4 frame
+  Uint8List get idm;
+  Uint8List get pmm;
+  /// A length-prefixed JIS X 6319-4 frame. Android's `NfcF.transceive`
+  /// takes exactly this; the CCID backend adds/strips the PN532
+  /// InDataExchange wrapper (`D4 40 01` / `D5 41 <status>`) around it.
+  Future<Uint8List> transceive(Uint8List felicaFrame);
 }
 
 abstract class NfcBTransport {
+  Uint8List get pupi;
   Uint8List get atqb;
-  Future<Uint8List> transceive(Uint8List cmd);
-}
-
-/// Real methods, not command bytes: Android's crypto1 handshake
-/// (MifareClassic.authenticateSectorWithKeyA/B) is not a proxyable
-/// byte stream, and on CCID the reader performs the cipher itself.
-abstract class MifareClassicTransport {
-  Uint8List get uid;
-  Future<void> authenticate(int sector, MifareKeyType type, Uint8List key);
-  Future<Uint8List> readBlock(int block);
+  Future<Uint8List> transceive(Uint8List apdu);
 }
 ```
+
+*Method-based transports* (the reader performs the operation; bytes are
+not portable):
+
+```dart
+/// Android's crypto1 handshake (`MifareClassic.authenticateSectorWithKeyA/B`)
+/// is not a proxyable byte stream, and on CCID the reader runs the cipher
+/// itself via the `FF82` Load Key / `FF86` General Authenticate
+/// pseudo-APDUs. Only the operation is portable.
+abstract class MifareClassicTransport {
+  Uint8List get uid;
+  Uint8List get atqa;
+  int get sak;
+  Future<void> authenticate(int sector, MifareKeyType type, Uint8List key);
+  Future<Uint8List> readBlock(int block); // 16 bytes
+}
+
+/// Type 2 is method-based for the same reason, and this is a REFINEMENT of
+/// an earlier draft of this spec, which had Type 2 riding on a raw-byte
+/// `NfcATransport`. That does not work: the ACR122U exposes Type-2 reads
+/// only as PC/SC pseudo-APDUs (`FFB0` Read Binary, `FFCA` Get Data), which
+/// the reader translates. Pushing raw ISO14443-A frames (`30 <page>`) at
+/// the tag would require `InCommunicateThru` (`D4 42`) escapes, which are
+/// unvalidated on our hardware and would mean abandoning the one Type-2
+/// read path proven against real NTAG/MRT cards. Android implements these
+/// three methods directly as `NfcA.transceive([0x30, page])` etc.
+abstract class Type2Transport {
+  Future<Uint8List> readUid();
+  Future<Uint8List> readPages(int startPage); // 16 bytes = 4 pages
+  Future<Uint8List?> getVersion();            // null where unsupported
+}
+```
+
+There is deliberately **no** general-purpose `NfcATransport`. Raw
+ISO14443-A byte access is not portable across the two backends, so
+exposing it would be a primitive that only ever works on one side.
 
 A tag is delivered to `identifyTag` as a bundle of whichever transports
 its source can offer (Android: derived from `Tag.getTechList()`; CCID:
@@ -109,12 +144,27 @@ all of them, since capability is unknown until probed).
 ### Layer 2: Backends
 
 **CcidTransportBackend** — mechanical extraction of logic that already
-exists. `NfcFTransport.transceive` = today's `D4 40 01` InDataExchange
-escape wrapping from `ccid_felica.dart`; `MifareClassicTransport` =
-today's `FF82`/`FF86` pseudo-APDUs; `NfcATransport`/`NfcBTransport`
-identity fields come from the existing PN532 `InListPassiveTarget` poll
-(`src/pn532.dart`); `IsoDepTransport.transceive` = plain APDU
-passthrough with `historicalBytes` = ATR. No protocol changes.
+exists, and which is hardware-validated. Every mapping below is code
+already in the tree today, just relocated:
+
+| Transport member | CCID implementation (existing code) |
+|---|---|
+| `Type2Transport.readUid` | `FFCA000000` Get Data |
+| `Type2Transport.readPages(p)` | `FFB000<p>10` Read Binary |
+| `Type2Transport.getVersion` | `FF0000000160` escape-wrapped `GET_VERSION` |
+| `MifareClassicTransport.authenticate` | `FF82` Load Key + `FF86` General Authenticate |
+| `MifareClassicTransport.readBlock(b)` | `FFB000<b>10` Read Binary |
+| `MifareClassicTransport` uid/atqa/sak | PN532 `InListPassiveTarget` (`pollTypeA`) |
+| `NfcFTransport.transceive` | `D4 40 01`-wrapped escape, strip `D5 41 <status>` |
+| `NfcFTransport.idm` / `.pmm` | `FFCA000000` / FeliCa Polling frame |
+| `IsoDepTransport.transceive` | plain APDU passthrough; `historicalBytes` = ATR |
+| `IsoDepTransport.uid` | PN532 `pollTypeA` |
+| `NfcBTransport` pupi/atqb | PN532 `pollTypeB` |
+
+No protocol changes. The byte sequences must come across **verbatim** —
+this library's correctness lives in them, and a prior malformed page-read
+APDU (`FFB00000<page>10`, a 6-byte APDU with P2 always `00`) survived
+several reviews before being caught.
 
 **AndroidNfcTransportBackend** (new Kotlin + Dart) —
 `NfcAdapter.enableReaderMode(activity, callback, FLAG_READER_NFC_A |
