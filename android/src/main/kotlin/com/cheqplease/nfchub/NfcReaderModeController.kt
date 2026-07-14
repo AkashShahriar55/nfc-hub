@@ -17,9 +17,12 @@ import io.flutter.plugin.common.EventChannel
  *  All identity extraction happens here (from the Tag, no connect()); all
  *  parsing/identification happens in Dart. */
 class NfcReaderModeController(
-    private val context: Context,
-    private val events: EventChannel.EventSink?
+    private val context: Context
 ) : NfcAdapter.ReaderCallback {
+
+    private var sink: EventChannel.EventSink? = null
+
+    fun setSink(sink: EventChannel.EventSink?) { this.sink = sink }
 
     private val adapter: NfcAdapter? = NfcAdapter.getDefaultAdapter(context)
     private val main = Handler(Looper.getMainLooper())
@@ -67,7 +70,7 @@ class NfcReaderModeController(
         }
         NfcF.get(tag)?.let { map["idm"] = tag.id; map["pmm"] = it.manufacturer }
         IsoDep.get(tag)?.let { map["historicalBytes"] = it.historicalBytes ?: it.hiLayerResponse }
-        main.post { events?.success(map) }
+        main.post { sink?.success(map) }
     }
 
     /** Lazily connects the requested tech and transceives. Throws to the
@@ -83,24 +86,37 @@ class NfcReaderModeController(
                 "IsoDep" -> connectIsoDep(handle, tag).transceive(data)
                 else -> throw IllegalArgumentException("Unknown tech $tech")
             }
-        } catch (e: android.nfc.TagLostException) {
+        } catch (e: java.io.IOException) {
             close(handle)
             throw TagGoneException("Tag lost during transceive: ${e.message}")
         }
     }
 
+    /** Wrong-key rejection returns false from the platform API (that's a normal
+     *  MIFARE_AUTH_FAILED outcome); only tag-loss (IOException/TagLostException,
+     *  thrown by connect()/authenticateSectorWithKeyA/B) becomes TAG_LOST. */
     fun mifareAuthenticate(handle: Int, sector: Int, keyA: Boolean, key: ByteArray): Boolean {
         val tag = synchronized(tags) { tags[handle] }
             ?: throw TagGoneException("Unknown or lost tag handle $handle")
-        val mc = connectMifare(handle, tag)
-        return if (keyA) mc.authenticateSectorWithKeyA(sector, key)
-        else mc.authenticateSectorWithKeyB(sector, key)
+        return try {
+            val mc = connectMifare(handle, tag)
+            if (keyA) mc.authenticateSectorWithKeyA(sector, key)
+            else mc.authenticateSectorWithKeyB(sector, key)
+        } catch (e: java.io.IOException) {
+            close(handle)
+            throw TagGoneException("Tag lost during MIFARE auth: ${e.message}")
+        }
     }
 
     fun mifareReadBlock(handle: Int, block: Int): ByteArray {
         val tag = synchronized(tags) { tags[handle] }
             ?: throw TagGoneException("Unknown or lost tag handle $handle")
-        return connectMifare(handle, tag).readBlock(block)
+        return try {
+            connectMifare(handle, tag).readBlock(block)
+        } catch (e: java.io.IOException) {
+            close(handle)
+            throw TagGoneException("Tag lost during MIFARE read: ${e.message}")
+        }
     }
 
     private fun connectNfcA(h: Int, tag: Tag): NfcA =

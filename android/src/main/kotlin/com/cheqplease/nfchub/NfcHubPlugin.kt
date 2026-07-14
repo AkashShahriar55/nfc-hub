@@ -30,14 +30,22 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     private var readers = mutableMapOf<String, Reader>()
 
     // --- Built-in (reader-mode) NFC state ---
+    // One controller for the plugin's lifetime: it owns the handle->Tag map
+    // and is the ReaderCallback, so re-creating it per event-channel
+    // onListen/onCancel (as before) was fragile -- it only worked by
+    // coincidence of dispatch ordering on the main thread. The sink is now a
+    // mutable field on the controller (see setSink), set/cleared by the event
+    // channel's onListen/onCancel.
     private lateinit var nfcController: NfcReaderModeController
     private var nfcEventSink: EventChannel.EventSink? = null
     private var activityBinding: Activity? = null
     // Source of truth for "should reader mode be on" is Dart (Task 4's
     // AndroidNfcSource, listener-count driven). We just remember the last
     // request so we can re-apply it across activity/config-change transitions
-    // and once a fresh controller/sink appears.
+    // (the controller itself is stable now; this flag only drives whether we
+    // re-call startReaderMode() after a fresh activity is attached).
     private var nfcReaderModeRequested = false
+    private var nfcStateReceiverRegistered = false
 
     private val nfcStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context, intent: Intent) {
@@ -100,22 +108,19 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         channel.setMethodCallHandler(this)
 
         appContext = flutterPluginBinding.applicationContext
-        nfcController = NfcReaderModeController(appContext, null)
+        nfcController = NfcReaderModeController(appContext)
 
         eventChannel = EventChannel(flutterPluginBinding.binaryMessenger, "nfc_hub/events")
         eventChannel.setStreamHandler(object : EventChannel.StreamHandler {
             override fun onListen(arguments: Any?, sink: EventChannel.EventSink) {
                 nfcEventSink = sink
-                nfcController = NfcReaderModeController(appContext, sink)
-                nfcController.attachActivity(activityBinding)
-                if (nfcReaderModeRequested) nfcController.startReaderMode()
+                nfcController.setSink(sink)
             }
 
             override fun onCancel(arguments: Any?) {
                 nfcController.stopReaderMode()
                 nfcEventSink = null
-                nfcController = NfcReaderModeController(appContext, null)
-                nfcController.attachActivity(activityBinding)
+                nfcController.setSink(null)
             }
         })
     }
@@ -269,10 +274,13 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     }
 
     private fun detachNfcActivity() {
-        try {
-            context.unregisterReceiver(nfcStateReceiver)
-        } catch (e: IllegalArgumentException) {
-            // Not registered (e.g. onDetached without a matching attach); ignore.
+        if (nfcStateReceiverRegistered) {
+            try {
+                context.unregisterReceiver(nfcStateReceiver)
+            } catch (e: IllegalArgumentException) {
+                // Not registered (e.g. onDetached without a matching attach); ignore.
+            }
+            nfcStateReceiverRegistered = false
         }
         nfcController.stopReaderMode()
         nfcController.attachActivity(null)
@@ -280,12 +288,14 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     }
 
     private fun registerNfcStateReceiver() {
+        if (nfcStateReceiverRegistered) return
         val filter = IntentFilter(NfcAdapter.ACTION_ADAPTER_STATE_CHANGED)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             context.registerReceiver(nfcStateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
         } else {
             context.registerReceiver(nfcStateReceiver, filter)
         }
+        nfcStateReceiverRegistered = true
     }
 
     private fun listReaders(): List<String> {
