@@ -6,7 +6,7 @@ import 'package:nfc_hub/src/apdu.dart';
 import 'package:convert/convert.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-class _FakeCcidPlatform extends CcidPlatform {
+class _FakeCcidPlatform extends NfcHubPlatform {
   final Map<String, String?> responses;
 
   _FakeCcidPlatform(this.responses);
@@ -28,7 +28,7 @@ class _FakeCcidPlatform extends CcidPlatform {
 
 void main() {
   tearDown(() {
-    CcidPlatform.instance = null;
+    NfcHubPlatform.instance = null;
   });
 
   group('stripAndCheckSw', () {
@@ -52,7 +52,7 @@ void main() {
 
   group('transceiveChecked', () {
     test('returns the data bytes on a 9000 response', () async {
-      CcidPlatform.instance =
+      NfcHubPlatform.instance =
           _FakeCcidPlatform({'00A4': '${hex.encode([0x01, 0x02])}9000'});
       final card = CcidCard('fake-reader');
 
@@ -62,7 +62,7 @@ void main() {
     });
 
     test('throws when the response has a non-9000 status word', () async {
-      CcidPlatform.instance =
+      NfcHubPlatform.instance =
           _FakeCcidPlatform({'00A4': '${hex.encode([0x01])}6A82'});
       final card = CcidCard('fake-reader');
 
@@ -73,7 +73,7 @@ void main() {
   group('transceiveEscape', () {
     test('wraps the payload in the FF 00 00 00 <Lc> escape command and '
         'returns the checked response', () async {
-      CcidPlatform.instance = _FakeCcidPlatform(
+      NfcHubPlatform.instance = _FakeCcidPlatform(
           {'FF00000003AABBCC': '${hex.encode([0x01, 0x02])}9000'});
       final card = CcidCard('fake-reader');
 

@@ -6,7 +6,7 @@ void main() {
 
   test('connect() decodes the hex ATR string returned by the platform',
       () async {
-    final channel = MethodChannelCcid();
+    final channel = MethodChannelNfcHub();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel.methodChannel, (call) async {
       expect(call.method, equals('connect'));
@@ -23,7 +23,7 @@ void main() {
   });
 
   test('connect() leaves atr null when the platform returns null', () async {
-    final channel = MethodChannelCcid();
+    final channel = MethodChannelNfcHub();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel.methodChannel, (call) async => null);
     addTearDown(() {

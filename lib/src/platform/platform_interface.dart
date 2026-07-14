@@ -6,22 +6,22 @@ import '../nfc_hub_base.dart';
 import 'method_channel.dart';
 import 'pcsc.dart';
 
-abstract class CcidPlatform extends PlatformInterface {
-  /// Constructs a CcidPlatform.
-  CcidPlatform() : super(token: _token);
+abstract class NfcHubPlatform extends PlatformInterface {
+  /// Constructs a NfcHubPlatform.
+  NfcHubPlatform() : super(token: _token);
 
   static final Object _token = Object();
 
-  static final CcidPlatform _methodChannelInstance = MethodChannelCcid();
+  static final NfcHubPlatform _methodChannelInstance = MethodChannelNfcHub();
 
-  static final CcidPlatform _pcscInstance = PcscCcid();
+  static final NfcHubPlatform _pcscInstance = PcscNfcHub();
 
-  static CcidPlatform? _instanceOverride;
+  static NfcHubPlatform? _instanceOverride;
 
-  /// The default instance of [CcidPlatform] to use.
+  /// The default instance of [NfcHubPlatform] to use.
   ///
-  /// Defaults to [MethodChannelCcid] on mobile/macOS, [PcscCcid] elsewhere.
-  static CcidPlatform get instance {
+  /// Defaults to [MethodChannelNfcHub] on mobile/macOS, [PcscNfcHub] elsewhere.
+  static NfcHubPlatform get instance {
     final override = _instanceOverride;
     if (override != null) {
       return override;
@@ -36,7 +36,7 @@ abstract class CcidPlatform extends PlatformInterface {
   /// Sets a test-only override for [instance]. Pass `null` to restore the
   /// platform-selected default.
   @visibleForTesting
-  static set instance(CcidPlatform? instance) {
+  static set instance(NfcHubPlatform? instance) {
     if (instance != null) {
       PlatformInterface.verifyToken(instance, _token);
     }
@@ -44,7 +44,7 @@ abstract class CcidPlatform extends PlatformInterface {
   }
 
   Future<List<String>> listReaders() {
-    throw UnimplementedError('poll() has not been implemented.');
+    throw UnimplementedError('listReaders() has not been implemented.');
   }
 
   Future<String?> transceive(String reader, String capdu) {

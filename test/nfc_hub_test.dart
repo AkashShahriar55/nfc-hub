@@ -3,7 +3,7 @@ import 'package:nfc_hub/src/platform/platform_interface.dart';
 import 'package:convert/convert.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-class _FakeCcidPlatform extends CcidPlatform {
+class _FakeCcidPlatform extends NfcHubPlatform {
   final Map<String, String> responses;
   final List<String> requestedCapdus = [];
 
@@ -31,7 +31,7 @@ class _FakeCcidPlatform extends CcidPlatform {
 
 void main() {
   tearDown(() {
-    CcidPlatform.instance = null;
+    NfcHubPlatform.instance = null;
   });
 
   test(
@@ -54,7 +54,7 @@ void main() {
       'FFB0000304': ccResponse,
       'FFB0000410': page4Response,
     });
-    CcidPlatform.instance = fake;
+    NfcHubPlatform.instance = fake;
 
     final card = CcidCard('fake-reader');
     final records = await Type2Tag(card).readNdef();

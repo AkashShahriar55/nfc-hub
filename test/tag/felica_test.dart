@@ -3,7 +3,7 @@ import 'package:nfc_hub/src/platform/platform_interface.dart';
 import 'package:convert/convert.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-class _FakeCcidPlatform extends CcidPlatform {
+class _FakeCcidPlatform extends NfcHubPlatform {
   final Map<String, String?> responses;
   final List<String> requestedCapdus = [];
 
@@ -30,7 +30,7 @@ class _FakeCcidPlatform extends CcidPlatform {
 
 void main() {
   tearDown(() {
-    CcidPlatform.instance = null;
+    NfcHubPlatform.instance = null;
   });
 
   const idmHex = 'AABBCCDDEE001122';
@@ -43,7 +43,7 @@ void main() {
 
   test('idm reads the card via Get UID and caches the result', () async {
     final fake = _FakeCcidPlatform({uidCapdu: uidResponse});
-    CcidPlatform.instance = fake;
+    NfcHubPlatform.instance = fake;
     final tag = FelicaTag(CcidCard('fake-reader'));
 
     final idm = await tag.idm;
@@ -68,7 +68,7 @@ void main() {
     // (18 bytes: len=12, respCode=01, idm(8), pmm(8)).
     const pollResponse = 'D541001201$idmHex${pmmHex}9000';
     final fake = _FakeCcidPlatform({pollCapdu: pollResponse});
-    CcidPlatform.instance = fake;
+    NfcHubPlatform.instance = fake;
     final tag = FelicaTag(CcidCard('fake-reader'));
 
     final pmm = await tag.pmm;
@@ -106,7 +106,7 @@ void main() {
       uidCapdu: uidResponse,
       readCapdu: readResponse,
     });
-    CcidPlatform.instance = fake;
+    NfcHubPlatform.instance = fake;
     final tag = FelicaTag(CcidCard('fake-reader'));
 
     final result = await tag.readWithoutEncryption(0x220F, [0]);
@@ -127,7 +127,7 @@ void main() {
       uidCapdu: uidResponse,
       readCapdu: readResponse,
     });
-    CcidPlatform.instance = fake;
+    NfcHubPlatform.instance = fake;
     final tag = FelicaTag(CcidCard('fake-reader'));
 
     expect(
@@ -150,7 +150,7 @@ void main() {
       uidCapdu: uidResponseLocal,
       requestCapdu: requestResponse,
     });
-    CcidPlatform.instance = fake;
+    NfcHubPlatform.instance = fake;
     final tag = FelicaTag(CcidCard('fake-reader'));
 
     final systemCodes = await tag.requestSystemCodes();
@@ -174,7 +174,7 @@ void main() {
       pollCapdu: pollResponse,
       requestCapdu: requestResponse,
     });
-    CcidPlatform.instance = fake;
+    NfcHubPlatform.instance = fake;
     final tag = FelicaTag(CcidCard('fake-reader'));
 
     final info = await tag.readTagInfo();

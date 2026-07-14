@@ -4,7 +4,7 @@ import 'package:nfc_hub/nfc_hub.dart';
 import 'package:nfc_hub/src/platform/platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-class _FakeCcidPlatform extends CcidPlatform {
+class _FakeCcidPlatform extends NfcHubPlatform {
   final Map<String, String?> responses;
 
   _FakeCcidPlatform(this.responses);
@@ -25,12 +25,12 @@ class _FakeCcidPlatform extends CcidPlatform {
 
 void main() {
   tearDown(() {
-    CcidPlatform.instance = null;
+    NfcHubPlatform.instance = null;
   });
 
   test('transceive() passes the APDU straight through to the card',
       () async {
-    CcidPlatform.instance = _FakeCcidPlatform({'00B0000000': 'AABB9000'});
+    NfcHubPlatform.instance = _FakeCcidPlatform({'00B0000000': 'AABB9000'});
     final tag = TypeBTag(CcidCard('fake-reader'), Uint8List(12));
 
     final response = await tag.transceive('00B0000000');

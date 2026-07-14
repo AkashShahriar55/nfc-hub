@@ -2,7 +2,7 @@ import 'package:nfc_hub/nfc_hub.dart';
 import 'package:nfc_hub/src/platform/platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-class _FakeCcidPlatform extends CcidPlatform {
+class _FakeCcidPlatform extends NfcHubPlatform {
   final Map<String, String?> responses;
   final List<String> requestedCapdus = [];
 
@@ -29,7 +29,7 @@ class _FakeCcidPlatform extends CcidPlatform {
 
 void main() {
   tearDown(() {
-    CcidPlatform.instance = null;
+    NfcHubPlatform.instance = null;
   });
 
   test('authenticateWithDefaultKeys() succeeds on the first working default key',
@@ -38,7 +38,7 @@ void main() {
       'FF82000006FFFFFFFFFFFF': '9000',
       'FF860000050100006000': '9000',
     });
-    CcidPlatform.instance = fake;
+    NfcHubPlatform.instance = fake;
     final tag = MifareClassicTag(CcidCard('fake-reader'));
 
     await tag.authenticateWithDefaultKeys(0);
@@ -55,7 +55,7 @@ void main() {
       'FF82000006D3F7D3F7D3F7': '6300',
       'FF82000006000000000000': '6300',
     });
-    CcidPlatform.instance = fake;
+    NfcHubPlatform.instance = fake;
     final tag = MifareClassicTag(CcidCard('fake-reader'));
 
     expect(
@@ -67,7 +67,7 @@ void main() {
   test('readBlock() sends a READ BINARY APDU with the block number in P2 '
       'and returns the decoded data', () async {
     final fake = _FakeCcidPlatform({'FFB0000110': '${'AA' * 16}9000'});
-    CcidPlatform.instance = fake;
+    NfcHubPlatform.instance = fake;
     final tag = MifareClassicTag(CcidCard('fake-reader'));
 
     final data = await tag.readBlock(1);
@@ -82,7 +82,7 @@ void main() {
       'FFB0000610': '${'02' * 16}9000',
       'FFB0000710': '${'03' * 16}9000',
     });
-    CcidPlatform.instance = fake;
+    NfcHubPlatform.instance = fake;
     final tag = MifareClassicTag(CcidCard('fake-reader'));
 
     final blocks = await tag.readSector(1);
@@ -96,7 +96,7 @@ void main() {
     final fake = _FakeCcidPlatform({
       'FF00000004D44A0100': 'D54B01010044080704010203040506' '9000',
     });
-    CcidPlatform.instance = fake;
+    NfcHubPlatform.instance = fake;
     final tag = MifareClassicTag(CcidCard('fake-reader'));
 
     final info = await tag.readTagInfo();

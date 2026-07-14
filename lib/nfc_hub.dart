@@ -2,7 +2,7 @@
 /// the device's built-in NFC antenna, behind one API.
 library;
 
-export 'src/nfc_hub_base.dart' show Ccid, CcidCard;
+export 'src/nfc_hub_base.dart' show NfcHub, CcidCard;
 export 'src/ndef.dart' show NdefRecord;
 export 'src/tag/detection.dart' show identifyTag;
 export 'src/tag/desfire_info.dart' show DesfireVersion;

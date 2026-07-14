@@ -3,7 +3,7 @@ import 'package:nfc_hub/src/platform/platform_interface.dart';
 import 'package:convert/convert.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-class _FakeCcidPlatform extends CcidPlatform {
+class _FakeCcidPlatform extends NfcHubPlatform {
   final Map<String, String?> responses;
 
   _FakeCcidPlatform(this.responses);
@@ -24,12 +24,12 @@ class _FakeCcidPlatform extends CcidPlatform {
 
 void main() {
   tearDown(() {
-    CcidPlatform.instance = null;
+    NfcHubPlatform.instance = null;
   });
 
   test('readTagInfo() returns UID and the parsed Capability Container',
       () async {
-    CcidPlatform.instance = _FakeCcidPlatform({
+    NfcHubPlatform.instance = _FakeCcidPlatform({
       'FFCA000000': '${hex.encode([0x04, 0x01, 0x02, 0x03])}9000',
       'FFB0000304': 'E11006009000',
     });

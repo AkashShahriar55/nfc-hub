@@ -30,7 +30,7 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  final _ccidPlugin = Ccid();
+  final _ccidPlugin = NfcHub();
   CcidCard? _card;
   String? _selectedReader;
   List<String> _readers = [];

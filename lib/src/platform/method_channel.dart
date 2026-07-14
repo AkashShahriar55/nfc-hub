@@ -5,8 +5,8 @@ import 'package:flutter/services.dart';
 import '../nfc_hub_base.dart';
 import 'platform_interface.dart';
 
-/// An implementation of [CcidPlatform] that uses method channels.
-class MethodChannelCcid extends CcidPlatform {
+/// An implementation of [NfcHubPlatform] that uses method channels.
+class MethodChannelNfcHub extends NfcHubPlatform {
   /// The method channel used to interact with the native platform.
   @visibleForTesting
   final methodChannel = const MethodChannel('nfc_hub');

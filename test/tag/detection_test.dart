@@ -4,7 +4,7 @@ import 'package:nfc_hub/nfc_hub.dart';
 import 'package:nfc_hub/src/platform/platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-class _FakeCcidPlatform extends CcidPlatform {
+class _FakeCcidPlatform extends NfcHubPlatform {
   final Map<String, String?> responses;
 
   _FakeCcidPlatform(this.responses);
@@ -29,7 +29,7 @@ class _FakeCcidPlatform extends CcidPlatform {
 
 void main() {
   tearDown(() {
-    CcidPlatform.instance = null;
+    NfcHubPlatform.instance = null;
   });
 
   group('identifyTag() via ATR', () {
@@ -104,7 +104,7 @@ void main() {
 
   group('identifyTag() probing fallback (no ATR)', () {
     test('recognizes a Type 2 Tag by its Capability Container', () async {
-      CcidPlatform.instance = _FakeCcidPlatform({
+      NfcHubPlatform.instance = _FakeCcidPlatform({
         'FFCA000000': '00019000',
         'FFB0000304': 'E11006009000',
       });
@@ -116,7 +116,7 @@ void main() {
     });
 
     test('recognizes an ISO-DEP card via a SELECT response', () async {
-      CcidPlatform.instance = _FakeCcidPlatform({
+      NfcHubPlatform.instance = _FakeCcidPlatform({
         'FFCA000000': '00019000',
         'FFB0000304': '6A82',
         '00A4040000': '6A82',
@@ -129,7 +129,7 @@ void main() {
     });
 
     test('throws UnrecognizedTagException when nothing responds', () async {
-      CcidPlatform.instance = _FakeCcidPlatform({'FFCA000000': null});
+      NfcHubPlatform.instance = _FakeCcidPlatform({'FFCA000000': null});
       final card = CcidCard('fake-reader');
 
       expect(
@@ -144,7 +144,7 @@ void main() {
         'fails (regression test matching real ACR122U + FeliCa hardware: '
         'Get UID succeeds and returns the IDm, but nothing else does)',
         () async {
-      CcidPlatform.instance = _FakeCcidPlatform({
+      NfcHubPlatform.instance = _FakeCcidPlatform({
         'FFCA000000': 'AABBCCDDEE0011229000',
         'FFB0000304': '6A82',
         // '00A4040000' (SELECT) deliberately unmapped: the fake platform
@@ -166,7 +166,7 @@ void main() {
         "UnrecognizedTagException's message includes the ATR status and "
         'every probe outcome, so it is diagnosable from an on-screen error '
         'alone', () async {
-      CcidPlatform.instance = _FakeCcidPlatform({'FFCA000000': null});
+      NfcHubPlatform.instance = _FakeCcidPlatform({'FFCA000000': null});
       final card = CcidCard('fake-reader');
 
       try {
@@ -180,7 +180,7 @@ void main() {
 
     test('recognizes a Type B card via the PN532 poll when nothing else '
         'matches', () async {
-      CcidPlatform.instance = _FakeCcidPlatform({
+      NfcHubPlatform.instance = _FakeCcidPlatform({
         'FFCA000000': null,
         'FF00000004D44A0103':
             'D54B' '01' '01' '${'11' * 12}' '00' '9000',

@@ -2,19 +2,19 @@ import 'dart:typed_data';
 
 import 'platform/platform_interface.dart';
 
-class Ccid {
+class NfcHub {
   /// List available readers
   ///
   /// Returns a list of reader names
   Future<List<String>> listReaders() {
-    return CcidPlatform.instance.listReaders();
+    return NfcHubPlatform.instance.listReaders();
   }
 
   /// Connect to a reader by its name [reader]
   ///
   /// Returns a [CcidCard] object
   Future<CcidCard> connect(String reader) {
-    return CcidPlatform.instance.connect(reader);
+    return NfcHubPlatform.instance.connect(reader);
   }
 }
 
@@ -33,11 +33,11 @@ class CcidCard {
   ///
   /// Returns the response APDU
   Future<String?> transceive(String capdu) {
-    return CcidPlatform.instance.transceive(reader, capdu);
+    return NfcHubPlatform.instance.transceive(reader, capdu);
   }
 
   /// Disconnect from the card
   Future<void> disconnect() {
-    return CcidPlatform.instance.disconnect(reader);
+    return NfcHubPlatform.instance.disconnect(reader);
   }
 }

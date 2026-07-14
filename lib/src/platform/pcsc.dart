@@ -6,8 +6,8 @@ import 'package:flutter/services.dart';
 import '../nfc_hub_base.dart';
 import 'platform_interface.dart';
 
-/// An implementation of [CcidPlatform] that uses dart_pcsc.
-class PcscCcid extends CcidPlatform {
+/// An implementation of [NfcHubPlatform] that uses dart_pcsc.
+class PcscNfcHub extends NfcHubPlatform {
   final context = Context(Scope.user);
   final readerCardMap = <String, Card>{};
   var _initialized = false;

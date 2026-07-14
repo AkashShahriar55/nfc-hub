@@ -2,7 +2,7 @@ import 'package:nfc_hub/nfc_hub.dart';
 import 'package:nfc_hub/src/platform/platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-class _FakeCcidPlatform extends CcidPlatform {
+class _FakeCcidPlatform extends NfcHubPlatform {
   final Map<String, String?> responses;
   final List<String> requestedCapdus = [];
 
@@ -24,7 +24,7 @@ class _FakeCcidPlatform extends CcidPlatform {
   Future<void> disconnect(String reader) async {}
 }
 
-class _SequencedFakeCcidPlatform extends CcidPlatform {
+class _SequencedFakeCcidPlatform extends NfcHubPlatform {
   final List<String?> responses;
   final List<String> requestedCapdus = [];
   int _index = 0;
@@ -52,14 +52,14 @@ class _SequencedFakeCcidPlatform extends CcidPlatform {
 
 void main() {
   tearDown(() {
-    CcidPlatform.instance = null;
+    NfcHubPlatform.instance = null;
   });
 
   test('selectApplication() sends a SELECT-by-name APDU with the AID as Lc/data',
       () async {
     // AID 'D2760000850101' is 7 bytes (14 hex chars), so Lc = 07.
     final fake = _FakeCcidPlatform({'00A4040007D2760000850101': '9000'});
-    CcidPlatform.instance = fake;
+    NfcHubPlatform.instance = fake;
     final tag = IsoDepTag(CcidCard('fake-reader'));
 
     final response = await tag.selectApplication('D2760000850101');
@@ -73,7 +73,7 @@ void main() {
 
   test('transceive() passes the APDU straight through to the card', () async {
     final fake = _FakeCcidPlatform({'00B0000000': 'AABB9000'});
-    CcidPlatform.instance = fake;
+    NfcHubPlatform.instance = fake;
     final tag = IsoDepTag(CcidCard('fake-reader'));
 
     final response = await tag.transceive('00B0000000');
@@ -89,7 +89,7 @@ void main() {
         'AF04010100061805',
         '0004525A19B21B808E36544D402604',
       ]);
-      CcidPlatform.instance = fake;
+      NfcHubPlatform.instance = fake;
       final tag = IsoDepTag(CcidCard('fake-reader'));
 
       final version = await tag.readDesfireVersion();
