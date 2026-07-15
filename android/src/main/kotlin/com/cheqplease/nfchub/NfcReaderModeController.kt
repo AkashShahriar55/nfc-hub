@@ -73,8 +73,20 @@ class NfcReaderModeController(
         main.post { sink?.success(map) }
     }
 
+    /** True for the exception classes that all mean "this tag can no longer be
+     *  reached": it left the field or was superseded by a newer discovery
+     *  (Android throws SecurityException "Tag is out of date" from
+     *  getTagService in that case), the tech isn't connected
+     *  (IllegalStateException), or an I/O error / TagLostException occurred.
+     *  Every one of these maps to TAG_LOST so the Dart side degrades cleanly
+     *  instead of the raw exception propagating uncaught and flooding. */
+    private fun isTagGone(e: Throwable): Boolean =
+        e is java.io.IOException ||
+            e is SecurityException ||
+            e is IllegalStateException
+
     /** Lazily connects the requested tech and transceives. Throws to the
-     *  MethodChannel Result as code TAG_LOST when the tag has left. */
+     *  MethodChannel Result as code TAG_LOST when the tag has left/gone stale. */
     fun transceive(handle: Int, tech: String, data: ByteArray): ByteArray {
         val tag = synchronized(tags) { tags[handle] }
             ?: throw TagGoneException("Unknown or lost tag handle $handle")
@@ -86,15 +98,16 @@ class NfcReaderModeController(
                 "IsoDep" -> connectIsoDep(handle, tag).transceive(data)
                 else -> throw IllegalArgumentException("Unknown tech $tech")
             }
-        } catch (e: java.io.IOException) {
+        } catch (e: Exception) {
+            if (!isTagGone(e)) throw e
             close(handle)
-            throw TagGoneException("Tag lost during transceive: ${e.message}")
+            throw TagGoneException("Tag no longer reachable during transceive: ${e.message}")
         }
     }
 
     /** Wrong-key rejection returns false from the platform API (that's a normal
-     *  MIFARE_AUTH_FAILED outcome); only tag-loss (IOException/TagLostException,
-     *  thrown by connect()/authenticateSectorWithKeyA/B) becomes TAG_LOST. */
+     *  MIFARE_AUTH_FAILED outcome); a gone/stale tag (thrown by
+     *  connect()/authenticateSectorWithKeyA/B) becomes TAG_LOST. */
     fun mifareAuthenticate(handle: Int, sector: Int, keyA: Boolean, key: ByteArray): Boolean {
         val tag = synchronized(tags) { tags[handle] }
             ?: throw TagGoneException("Unknown or lost tag handle $handle")
@@ -102,9 +115,10 @@ class NfcReaderModeController(
             val mc = connectMifare(handle, tag)
             if (keyA) mc.authenticateSectorWithKeyA(sector, key)
             else mc.authenticateSectorWithKeyB(sector, key)
-        } catch (e: java.io.IOException) {
+        } catch (e: Exception) {
+            if (!isTagGone(e)) throw e
             close(handle)
-            throw TagGoneException("Tag lost during MIFARE auth: ${e.message}")
+            throw TagGoneException("Tag no longer reachable during MIFARE auth: ${e.message}")
         }
     }
 
@@ -113,9 +127,10 @@ class NfcReaderModeController(
             ?: throw TagGoneException("Unknown or lost tag handle $handle")
         return try {
             connectMifare(handle, tag).readBlock(block)
-        } catch (e: java.io.IOException) {
+        } catch (e: Exception) {
+            if (!isTagGone(e)) throw e
             close(handle)
-            throw TagGoneException("Tag lost during MIFARE read: ${e.message}")
+            throw TagGoneException("Tag no longer reachable during MIFARE read: ${e.message}")
         }
     }
 
