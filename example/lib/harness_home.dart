@@ -41,10 +41,23 @@ class _HarnessHomeState extends State<HarnessHome> {
   StreamSubscription<TagDriver>? _subscription;
   final List<_TagEntry> _entries = [];
 
+  /// A SINGLE NfcHub shared by both the tag stream and the connection-state
+  /// stream when neither is injected. `late final` so it is built only if a
+  /// default is actually needed (never in tests, which inject both streams).
+  /// Using one instance avoids spinning up two NfcHubs -- and therefore two
+  /// CcidSource poll loops over the same USB readers, with doubled USB
+  /// traffic and permission prompts.
+  late final NfcHub _hub = NfcHub();
+
+  /// The connection-state stream, resolved once (not per build, which would
+  /// hand ConnectionStatusBar a fresh stream it ignores after the first).
+  late final Stream<CcidConnectionState> _statesStream =
+      widget.connectionState ?? _hub.connectionState();
+
   @override
   void initState() {
     super.initState();
-    final tags = widget.tags ?? NfcHub().tagStream();
+    final tags = widget.tags ?? _hub.tagStream();
     _subscription = tags.listen(_onTag);
   }
 
@@ -96,7 +109,10 @@ class _HarnessHomeState extends State<HarnessHome> {
       children: [
         Padding(
           padding: const EdgeInsets.all(8.0),
-          child: ConnectionStatusBar(states: widget.connectionState),
+          // Pass the shared hub's connection-state stream so a bare
+          // HarnessHome() does not make ConnectionStatusBar build its own
+          // second NfcHub (see [_hub]).
+          child: ConnectionStatusBar(states: _statesStream),
         ),
         Expanded(
           child: _entries.isEmpty
