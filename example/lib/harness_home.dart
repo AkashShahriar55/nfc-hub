@@ -5,6 +5,7 @@ import 'package:nfc_hub/nfc_hub.dart';
 
 import 'connection_status_bar.dart';
 import 'tag_detail_page.dart';
+import 'tag_readout.dart';
 
 /// The harness home screen: the connection status bar on top, and below it
 /// a live list of tags auto-detected via `tagStream()` — tap a phone or
@@ -26,16 +27,18 @@ class HarnessHome extends StatefulWidget {
   State<HarnessHome> createState() => _HarnessHomeState();
 }
 
-/// One row's worth of summary for a detected tag: the driver itself, plus
-/// either its [TagInfo] (on a successful `readTagInfo()`) or the error
-/// string (on a failed one) -- a failed info read still lists the tag
-/// rather than dropping it silently.
+/// One row's worth of a detected tag: the driver, its [TagInfo] (or the error
+/// from a failed `readTagInfo()` -- a failed read still lists the tag rather
+/// than dropping it silently), and, once the eager read finishes, the full
+/// cached [TagReadout] the detail page shows. [readout] is null while the
+/// eager read is still in flight (the row shows a spinner then).
 class _TagEntry {
+  _TagEntry({required this.driver, this.info, this.infoError});
+
   final TagDriver driver;
   final TagInfo? info;
-  final String? error;
-
-  const _TagEntry({required this.driver, this.info, this.error});
+  final Object? infoError;
+  TagReadout? readout;
 }
 
 class _HarnessHomeState extends State<HarnessHome> {
@@ -63,17 +66,29 @@ class _HarnessHomeState extends State<HarnessHome> {
   }
 
   Future<void> _onTag(TagDriver driver) async {
+    // Phase 1: identify quickly so the row appears with its technology + UID.
     TagInfo? info;
-    String? error;
+    Object? infoError;
     try {
       info = await driver.readTagInfo();
     } catch (e) {
-      error = '$e';
+      infoError = e;
     }
     if (!mounted) return;
-    setState(() {
-      _entries.insert(0, _TagEntry(driver: driver, info: info, error: error));
-    });
+    final entry = _TagEntry(driver: driver, info: info, infoError: infoError);
+    setState(() => _entries.insert(0, entry));
+
+    // Phase 2: read EVERYTHING now, while the tag is still present, and cache
+    // it -- so the detail view works after the card is lifted. The row shows
+    // a spinner until this completes.
+    final readout = await readEverything(
+      driver,
+      info: info,
+      infoError: infoError,
+      infoResolved: true,
+    );
+    if (!mounted) return;
+    setState(() => entry.readout = readout);
   }
 
   @override
@@ -82,10 +97,12 @@ class _HarnessHomeState extends State<HarnessHome> {
     super.dispose();
   }
 
-  void _openDetail(TagDriver driver) {
+  void _openDetail(_TagEntry entry) {
+    final readout = entry.readout;
+    if (readout == null) return; // still reading -- row isn't tappable yet
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => TagDetailPage(driver: driver),
+        builder: (_) => TagDetailPage(readout: readout),
       ),
     );
   }
@@ -133,14 +150,25 @@ class _HarnessHomeState extends State<HarnessHome> {
                         entry.driver.runtimeType.toString();
                     final uidHex =
                         info != null ? _hex(info.uid) : '(unavailable)';
-                    final subtitle = entry.error == null
-                        ? 'UID: $uidHex'
-                        : 'UID: $uidHex — ${entry.error}';
+                    final reading = entry.readout == null;
+                    final subtitle = entry.infoError != null
+                        ? 'UID: $uidHex — ${entry.infoError}'
+                        : reading
+                            ? 'UID: $uidHex — reading…'
+                            : 'UID: $uidHex';
                     return ListTile(
                       leading: Icon(_iconFor(entry.driver)),
                       title: Text(title),
                       subtitle: Text(subtitle),
-                      onTap: () => _openDetail(entry.driver),
+                      trailing: reading
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child:
+                                  CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.chevron_right),
+                      // Not tappable until the eager read has cached the data.
+                      onTap: reading ? null : () => _openDetail(entry),
                     );
                   },
                 ),
