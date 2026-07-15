@@ -176,7 +176,8 @@ class CcidSource implements TagSource {
         onCancel: _onCancel,
       ))
           .stream
-          .listen(controller.add, onError: controller.addError);
+          .listen(controller.add,
+              onError: controller.addError, onDone: controller.close);
       controller.onCancel = live.cancel;
     }, isBroadcast: true);
   }
@@ -198,7 +199,8 @@ class CcidSource implements TagSource {
         onCancel: _onCancel,
       ))
           .stream
-          .listen(controller.add, onError: controller.addError);
+          .listen(controller.add,
+              onError: controller.addError, onDone: controller.close);
       controller.onCancel = live.cancel;
     }, isBroadcast: true);
   }
@@ -281,8 +283,12 @@ class CcidSource implements TagSource {
       // leaking it (Android: an unclosed USB device handle; PC/SC: a Card
       // whose context.release() would otherwise never fire).
       if (wasOccupied) {
-        await _disconnectQuietly(reader);
+        // Clear the held driver SYNCHRONOUSLY, before the disconnect await --
+        // otherwise a listener attaching to tags()/taggedTags() during that
+        // await window replays a driver for a card that is already gone,
+        // over a connection that is mid-teardown.
         _occupiedDrivers.remove(reader);
+        await _disconnectQuietly(reader);
       }
     }
 
@@ -346,12 +352,15 @@ class CcidSource implements TagSource {
       return true;
     } catch (_) {
       _status[reader] = _ReaderStatus.empty;
+      // Clear the held driver SYNCHRONOUSLY with the status flip, before the
+      // disconnect await -- otherwise a listener attaching mid-disconnect
+      // replays a driver for a card that is already gone.
+      _occupiedDrivers.remove(reader);
       // The card is gone -- release the connection the emitted TagDriver
       // was holding open for reads. Never called while still occupied: a
       // still-present card must keep its connection alive for the app's
       // in-flight reads.
       await _disconnectQuietly(reader);
-      _occupiedDrivers.remove(reader);
       return false;
     }
   }

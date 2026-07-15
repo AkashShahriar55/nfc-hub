@@ -40,6 +40,12 @@ class _FakePlatform extends NfcHubPlatform {
   /// verify a throwing disconnect doesn't break the poll loop.
   Object? disconnectError;
 
+  /// When set, [disconnect] awaits this completer before proceeding (and
+  /// before throwing [disconnectError], if also set) -- used to hold a
+  /// disconnect open across a [FakeAsync.elapse] so a test can attach a new
+  /// listener while the teardown is still in flight.
+  Completer<void>? disconnectHold;
+
   @override
   Future<List<String>> listReaders() async {
     listReadersLog.add('listReaders');
@@ -67,6 +73,7 @@ class _FakePlatform extends NfcHubPlatform {
   @override
   Future<void> disconnect(String reader) async {
     disconnectLog.add(reader);
+    if (disconnectHold != null) await disconnectHold!.future;
     if (disconnectError != null) throw disconnectError!;
   }
 }
@@ -496,6 +503,87 @@ void main() {
         expect(platform.connectLog, ['reader-1']);
         expect(drivers, hasLength(1));
       });
+    });
+
+    test(
+        'a late tags() listener attaching WHILE a removed card\'s '
+        'disconnect() is still in flight does NOT get the stale driver '
+        'replayed', () {
+      FakeAsync().run((async) {
+        final platform = _FakePlatform()
+          ..readers = ['reader-1']
+          ..cardsPresent.add('reader-1')
+          ..disconnectHold = Completer<void>();
+        final source = CcidSource(platform);
+        addTearDown(source.dispose);
+
+        // Tick 1: card seated -> connect succeeds -> emits, occupied.
+        source.tags().listen((_) {});
+        async.elapse(const Duration(milliseconds: 500));
+        expect(platform.connectLog, ['reader-1']);
+
+        // Card is pulled: the next probe throws, kicking off disconnect(),
+        // which is held open by platform.disconnectHold.
+        platform.cardsPresent.remove('reader-1');
+        async.elapse(const Duration(milliseconds: 500));
+        expect(platform.disconnectLog, ['reader-1'],
+            reason: 'disconnect() has been called but not yet resolved');
+
+        // A brand-new listener attaches WHILE that disconnect is still in
+        // flight. It must see nothing replayed -- the reader's card is
+        // already known-gone and its connection is mid-teardown.
+        final lateDrivers = <TagDriver>[];
+        final lateSub = source.tags().listen(lateDrivers.add);
+        async.flushMicrotasks();
+        expect(lateDrivers, isEmpty,
+            reason: 'the stale driver must not be replayed while the '
+                "reader's disconnect() is still in flight");
+
+        // Let the disconnect resolve so the source can be torn down cleanly.
+        platform.disconnectHold!.complete();
+        async.elapse(const Duration(milliseconds: 500));
+        lateSub.cancel();
+      });
+    });
+
+    // Real timing, not FakeAsync: Stream.multi's done delivery does not
+    // propagate through the inner subscription's onDone forwarding under
+    // FakeAsync (a FakeAsync/Stream.multi interaction quirk -- verified in
+    // isolation that the same forwarding completes correctly under real
+    // async). The production dispose() path this guards runs in real async.
+    test('dispose() completes tags() and taggedTags() for existing '
+        'listeners (an await-for over tags() must end, not hang forever)',
+        () async {
+      final platform = _FakePlatform()
+        ..readers = ['reader-1']
+        ..cardsPresent.add('reader-1');
+      final source = CcidSource(platform, pollInterval: const Duration(milliseconds: 10));
+
+      var tagsDone = false;
+      var taggedDone = false;
+      final tagsSub =
+          source.tags().listen((_) {}, onDone: () => tagsDone = true);
+      final taggedSub = source
+          .taggedTags()
+          .listen((_) {}, onDone: () => taggedDone = true);
+
+      // Let the poll loop run a few ticks so the card is seated/occupied.
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      expect(tagsDone, isFalse);
+      expect(taggedDone, isFalse);
+
+      await source.dispose();
+      // Let the done events propagate through the Stream.multi wrappers.
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(tagsDone, isTrue,
+          reason: 'tags() must complete when dispose() closes the '
+              'underlying controller, or an await-for over it hangs forever');
+      expect(taggedDone, isTrue,
+          reason: 'taggedTags() must likewise complete on dispose()');
+
+      await tagsSub.cancel();
+      await taggedSub.cancel();
     });
   });
 }
