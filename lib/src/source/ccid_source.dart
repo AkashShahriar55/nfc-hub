@@ -393,12 +393,16 @@ class CcidSource implements TagSource {
   Future<void> dispose() async {
     _timer?.cancel();
     _timer = null;
+    // Clear each held driver SYNCHRONOUSLY before awaiting its disconnect --
+    // same invariant as _probeStillPresent / the vanished-reader branch: a
+    // listener attaching mid-disconnect must never replay a driver for a card
+    // that is already being torn down.
+    _occupiedDrivers.clear();
     for (final entry in _status.entries) {
       if (entry.value == _ReaderStatus.occupied) {
         await _disconnectQuietly(entry.key);
       }
     }
-    _occupiedDrivers.clear();
     await _tagsController?.close();
     await _taggedTagsController?.close();
     await _statesController?.close();
