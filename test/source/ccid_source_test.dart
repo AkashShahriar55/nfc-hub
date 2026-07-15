@@ -374,6 +374,92 @@ void main() {
     });
 
     test(
+        'a card present before tags() is listened is delivered to a late '
+        'tags() subscriber (readerStates was already driving the loop)', () {
+      // Regression: connectionState() (readerStates) listened first must
+      // not consume the card such that a later tagStream() (tags) never
+      // sees it.
+      FakeAsync().run((async) {
+        final platform = _FakePlatform()
+          ..readers = ['reader-1']
+          ..cardsPresent.add('reader-1');
+        final source = CcidSource(platform);
+        addTearDown(source.dispose);
+
+        // Only readerStates is listened first (what connectionState does).
+        final states = <List<ExternalReaderState>>[];
+        final stateSub = source.readerStates().listen(states.add);
+        async.elapse(const Duration(milliseconds: 1500)); // a few ticks
+        expect(states.last, [const ExternalReaderState('reader-1', true)]);
+
+        // Now the app starts tagStream().
+        final tags = <TagDriver>[];
+        final tagSub = source.tags().listen(tags.add);
+        async.elapse(const Duration(milliseconds: 500));
+
+        expect(tags, isNotEmpty,
+            reason: 'the card present when tags() started listening must '
+                'be delivered to it');
+        stateSub.cancel();
+        tagSub.cancel();
+      });
+    });
+
+    test(
+        'a card present before taggedTags() is listened is delivered to a '
+        'late taggedTags() subscriber, tagged with its reader', () {
+      FakeAsync().run((async) {
+        final platform = _FakePlatform()
+          ..readers = ['reader-1']
+          ..cardsPresent.add('reader-1');
+        final source = CcidSource(platform);
+        addTearDown(source.dispose);
+
+        final stateSub = source.readerStates().listen((_) {});
+        async.elapse(const Duration(milliseconds: 1500));
+
+        final tagged = <ReaderTaggedDriver>[];
+        final taggedSub = source.taggedTags().listen(tagged.add);
+        async.elapse(const Duration(milliseconds: 500));
+
+        expect(tagged, hasLength(1));
+        expect(tagged.single.reader, 'reader-1');
+        stateSub.cancel();
+        taggedSub.cancel();
+      });
+    });
+
+    test(
+        'a late tags() listener does NOT re-deliver to a listener already '
+        'attached from the start (no double emit)', () {
+      FakeAsync().run((async) {
+        final platform = _FakePlatform()
+          ..readers = ['reader-1']
+          ..cardsPresent.add('reader-1');
+        final source = CcidSource(platform);
+        addTearDown(source.dispose);
+
+        final firstDrivers = <TagDriver>[];
+        final firstSub = source.tags().listen(firstDrivers.add);
+        async.elapse(const Duration(milliseconds: 500));
+        expect(firstDrivers, hasLength(1));
+
+        // A second, late listener joins after the card is already occupied.
+        final secondDrivers = <TagDriver>[];
+        final secondSub = source.tags().listen(secondDrivers.add);
+        async.elapse(const Duration(milliseconds: 500));
+
+        expect(secondDrivers, hasLength(1),
+            reason: 'the late listener gets the replay exactly once');
+        expect(firstDrivers, hasLength(1),
+            reason:
+                'the listener already attached must not be re-delivered to');
+        firstSub.cancel();
+        secondSub.cancel();
+      });
+    });
+
+    test(
         "tick overlap guard: a tick whose async work outlives one poll "
         'interval is not double-run by an overlapping tick -- the reader '
         'is connected and emitted exactly once', () {
