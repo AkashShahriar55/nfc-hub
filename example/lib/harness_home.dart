@@ -106,10 +106,14 @@ class _HarnessHomeState extends State<HarnessHome> {
       children: [
         Padding(
           padding: const EdgeInsets.all(8.0),
-          // Pass the shared hub's connection-state stream so a bare
-          // HarnessHome() does not make ConnectionStatusBar build its own
-          // second NfcHub (see [_hub]).
-          child: ConnectionStatusBar(states: _statesStream),
+          // Pass BOTH the shared hub's connection-state stream AND its
+          // openNfcSettings, so a bare HarnessHome() never makes
+          // ConnectionStatusBar build its own second NfcHub -- neither for
+          // the stream nor for the Enable-NFC action (see [_hub]).
+          child: ConnectionStatusBar(
+            states: _statesStream,
+            onEnableNfc: _hub.openNfcSettings,
+          ),
         ),
         Expanded(
           child: _entries.isEmpty
