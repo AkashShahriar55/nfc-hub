@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:nfc_hub/nfc_hub.dart';
 
-import 'tag_details_page.dart';
+import 'tag_detail_page.dart';
 
 void main() {
   runApp(const MyApp());
@@ -78,7 +78,7 @@ class _MyHomePageState extends State<MyHomePage> {
       if (!mounted) return;
       Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (context) => TagDetailsPage(driver: driver),
+          builder: (context) => TagDetailPage(driver: driver),
         ),
       );
     } catch (e) {
