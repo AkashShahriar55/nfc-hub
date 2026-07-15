@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:nfc_hub/nfc_hub.dart';
 
 import 'connection_status_bar.dart';
+import 'tag_detail_page.dart';
 
 /// The harness home screen: the connection status bar on top, and below it
 /// a live list of tags auto-detected via `tagStream()` — tap a phone or
@@ -84,11 +85,7 @@ class _HarnessHomeState extends State<HarnessHome> {
   void _openDetail(TagDriver driver) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        // TODO(task4): replace with TagDetailPage(driver: driver)
-        builder: (_) => Scaffold(
-          appBar: AppBar(title: Text('${driver.runtimeType}')),
-          body: const Center(child: Text('Detail page — Task 4')),
-        ),
+        builder: (_) => TagDetailPage(driver: driver),
       ),
     );
   }

@@ -14,14 +14,22 @@ dependencies:
 ```dart
 import 'package:nfc_hub/nfc_hub.dart';
 
-final nfcHub = NfcHub();
-final readers = await nfcHub.listReaders();
-final card = await nfcHub.connect(readers.first);
-
-final driver = await identifyTag(card);
-final info = await driver.readTagInfo();
-print(info.technology);
+final hub = NfcHub();
+await for (final tag in hub.tagStream()) {
+  final info = await tag.readTagInfo();
+  print('${info.technology} — UID ${info.uid}');
+  // family-specific reads, identical whether the tag came from the
+  // phone's antenna or a USB CCID reader:
+  if (tag is Type2Tag) print(await tag.readNdef());
+}
 ```
+
+`tagStream()` auto-detects tags from both sources at once -- the phone's
+built-in NFC antenna and any attached CCID/PC-SC reader -- so the same code
+handles a tap and a seated card without branching on where it came from.
+The `example/` app is a full test harness built on this: auto-detect,
+live dual-source connection status, and per-family reads for every
+supported tag type.
 
 ### Android
 
