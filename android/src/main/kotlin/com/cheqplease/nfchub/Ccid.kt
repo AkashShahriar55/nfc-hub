@@ -10,6 +10,12 @@ class Ccid(
 ) {
     private var currentSeq = 0.toByte()
 
+    /// Releases the underlying USB device connection (and any claimed
+    /// interface). Call on disconnect so the card's session doesn't leak.
+    fun close() {
+        usbDeviceConnection.close()
+    }
+
     fun iccPowerOn(): ByteArray {
         val seq = currentSeq++
         val command = byteArrayOf(

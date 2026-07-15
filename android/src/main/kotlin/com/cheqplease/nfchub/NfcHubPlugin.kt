@@ -165,7 +165,13 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                     result.error("CCID_READER_NOT_FOUND", "Reader not found", null)
                     return
                 }
+                // Release the held USB connection, not just the reference --
+                // otherwise the poll loop's removal/re-insertion cycle leaks a
+                // connection on every card removal (same bug class as the
+                // connect() failure-path leak).
+                reader.ccid?.close()
                 readers[name] = reader.copy(ccid = null)
+                result.success(null)
             }
 
             "nfcStartReaderMode" -> {
@@ -386,6 +392,7 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             Log.e(TAG, "Failed to open device")
             return null
         }
+        var success = false
         return try {
             val endpoints = getEndpoints(usbInterface)
             val ccid = Ccid(usbConnection, endpoints.first, endpoints.second)
@@ -400,10 +407,22 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             }
             val atr = ccid.iccPowerOn()
             Log.d(TAG, "ATR: ${atr.toHexString()}")
+            success = true
             Pair(ccid, atr)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to connect to interface: ${e.message}")
             null
+        } finally {
+            // Release the USB connection on EVERY failure path. The auto-detect
+            // poll loop calls connect() on an empty reader every tick; iccPowerOn
+            // fails (no card) each time, and without this close() each attempt
+            // leaked a UsbDeviceConnection and a claimed interface. That
+            // accumulation corrupts the reader's USB state so that once a card
+            // IS placed it can no longer be powered on. Only the success path
+            // keeps the connection open (it becomes the card's session).
+            if (!success) {
+                usbConnection.close()
+            }
         }
     }
 
