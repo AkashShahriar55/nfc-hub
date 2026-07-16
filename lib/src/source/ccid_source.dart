@@ -159,6 +159,14 @@ class CcidSource implements TagSource {
   /// the card was already identified -- see the class doc for why.
   final Map<String, TagDriver> _occupiedDrivers = {};
 
+  /// The occupied card's Get-UID probe response (hex), captured at connect
+  /// time and keyed by reader name. Lets [_probeStillPresent] tell "the same
+  /// card is still here" from "a DIFFERENT card was swapped in" (a changed
+  /// UID). Empty string if the card doesn't answer the probe (e.g. Type B) --
+  /// then the probe falls back to presence-only. Cleared alongside
+  /// [_occupiedDrivers].
+  final Map<String, String> _occupiedUid = {};
+
   @override
   Stream<TagDriver> tags() {
     // Stream.multi (isBroadcast: true) invokes this callback once per
@@ -283,11 +291,12 @@ class CcidSource implements TagSource {
       // leaking it (Android: an unclosed USB device handle; PC/SC: a Card
       // whose context.release() would otherwise never fire).
       if (wasOccupied) {
-        // Clear the held driver SYNCHRONOUSLY, before the disconnect await --
-        // otherwise a listener attaching to tags()/taggedTags() during that
-        // await window replays a driver for a card that is already gone,
-        // over a connection that is mid-teardown.
+        // Clear the held driver + UID baseline SYNCHRONOUSLY, before the
+        // disconnect await -- otherwise a listener attaching to
+        // tags()/taggedTags() during that await window replays a driver for a
+        // card that is already gone, over a connection that is mid-teardown.
         _occupiedDrivers.remove(reader);
+        _occupiedUid.remove(reader);
         await _disconnectQuietly(reader);
       }
     }
@@ -324,6 +333,14 @@ class CcidSource implements TagSource {
     }
 
     _status[reader] = _ReaderStatus.occupied;
+    // Capture the card's UID as the identity baseline so a later swap (a
+    // different card seated without an intervening empty tick) is detected
+    // as a change rather than "still the same card present".
+    try {
+      _occupiedUid[reader] = await _platform.transceive(reader, _probeApdu) ?? '';
+    } catch (_) {
+      _occupiedUid[reader] = ''; // card doesn't answer the probe (e.g. Type B)
+    }
     try {
       final driver = await identifyTag(card);
       _occupiedDrivers[reader] = driver;
@@ -343,26 +360,40 @@ class CcidSource implements TagSource {
     return true;
   }
 
-  /// Probes an **occupied** reader for continued card presence. Returns
-  /// true if the card is still there; false (and flips the reader back to
-  /// empty) if the probe failed, meaning the card was removed.
+  /// Probes an **occupied** reader for continued presence of the SAME card.
+  /// Returns true if the same card is still there; false (and flips the
+  /// reader back to empty, disconnecting) if the card was removed OR a
+  /// different card was swapped in (its UID changed) -- in both cases the
+  /// next tick freshly connects and identifies whatever is now present,
+  /// rather than leaving the previous card's driver/data in place.
   Future<bool> _probeStillPresent(String reader) async {
+    final String? response;
     try {
-      await _platform.transceive(reader, _probeApdu);
-      return true;
+      response = await _platform.transceive(reader, _probeApdu);
     } catch (_) {
-      _status[reader] = _ReaderStatus.empty;
-      // Clear the held driver SYNCHRONOUSLY with the status flip, before the
-      // disconnect await -- otherwise a listener attaching mid-disconnect
-      // replays a driver for a card that is already gone.
-      _occupiedDrivers.remove(reader);
-      // The card is gone -- release the connection the emitted TagDriver
-      // was holding open for reads. Never called while still occupied: a
-      // still-present card must keep its connection alive for the app's
-      // in-flight reads.
-      await _disconnectQuietly(reader);
+      // Nothing answers the probe -- the card was removed.
+      await _markCardGone(reader);
       return false;
     }
+    final baseline = _occupiedUid[reader];
+    if (baseline != null && baseline.isNotEmpty && response != baseline) {
+      // A DIFFERENT card is now seated (its Get-UID response changed).
+      await _markCardGone(reader);
+      return false;
+    }
+    return true;
+  }
+
+  /// Flips [reader] back to empty and releases its card: clears the held
+  /// driver and UID baseline SYNCHRONOUSLY (before the disconnect await, so a
+  /// listener attaching mid-disconnect can't replay a driver for a card that
+  /// is already gone), then disconnects. The next tick re-detects whatever is
+  /// present now.
+  Future<void> _markCardGone(String reader) async {
+    _status[reader] = _ReaderStatus.empty;
+    _occupiedDrivers.remove(reader);
+    _occupiedUid.remove(reader);
+    await _disconnectQuietly(reader);
   }
 
   /// Releases the connection held for [reader]'s card. Best-effort: a
@@ -398,6 +429,7 @@ class CcidSource implements TagSource {
     // listener attaching mid-disconnect must never replay a driver for a card
     // that is already being torn down.
     _occupiedDrivers.clear();
+    _occupiedUid.clear();
     for (final entry in _status.entries) {
       if (entry.value == _ReaderStatus.occupied) {
         await _disconnectQuietly(entry.key);

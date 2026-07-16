@@ -31,6 +31,11 @@ class _FakePlatform extends NfcHubPlatform {
   /// removal probe) only succeeds for a reader in this set too.
   final Set<String> cardsPresent = {};
 
+  /// The Get-UID probe response per reader. A test flips this (while the
+  /// reader stays in [cardsPresent]) to simulate a DIFFERENT card swapped in
+  /// without an intervening empty tick. Defaults to '9000' for a seated card.
+  final Map<String, String> cardUid = {};
+
   final List<String> listReadersLog = [];
   final List<String> connectLog = [];
   final List<String> transceiveLog = [];
@@ -67,7 +72,7 @@ class _FakePlatform extends NfcHubPlatform {
     if (!cardsPresent.contains(reader)) {
       throw Exception('card removed from $reader');
     }
-    return '9000';
+    return cardUid[reader] ?? '9000';
   }
 
   @override
@@ -154,6 +159,38 @@ void main() {
         async.elapse(const Duration(seconds: 3)); // several 500ms ticks
 
         expect(drivers, hasLength(1));
+      });
+    });
+
+    test(
+        'a DIFFERENT card swapped in (UID changed, no empty tick) is '
+        're-identified rather than left showing the previous card', () {
+      // Regression: the removal probe only checked presence, not identity, so
+      // a fast A->B swap kept the reader "occupied" with A's driver -- the UI
+      // showed the previous card's data for the newly-seated one.
+      FakeAsync().run((async) {
+        final platform = _FakePlatform()
+          ..readers = ['reader-1']
+          ..cardsPresent.add('reader-1')
+          ..cardUid['reader-1'] = '04AABBCC9000'; // card A
+        final source = CcidSource(platform);
+        addTearDown(source.dispose);
+
+        final drivers = <TagDriver>[];
+        source.tags().listen(drivers.add);
+
+        async.elapse(const Duration(milliseconds: 500)); // card A detected
+        expect(drivers, hasLength(1));
+
+        // Swap in a DIFFERENT card without an intervening empty tick: same
+        // reader still has a card, but its Get-UID response changed.
+        platform.cardUid['reader-1'] = '04DDEEFF9000'; // card B
+        async.elapse(const Duration(milliseconds: 500)); // probe sees change
+        async.elapse(const Duration(milliseconds: 500)); // reconnect + identify
+
+        expect(drivers, hasLength(2),
+            reason: 'the swapped-in card must be identified and emitted as a '
+                'new driver, not left showing the previous card');
       });
     });
 
