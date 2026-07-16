@@ -87,7 +87,9 @@ class NfcHubReader {
   /// Future it is awaited before the next tag is delivered, so reads on one tag
   /// never overlap the next (important for the single-threaded CCID reader). A
   /// throwing/failing [onDiscovered] is isolated — it does not tear down the
-  /// session. [onError], if given, receives stream errors. Calling
+  /// session. [onError], if given, receives stream errors; if omitted, stream
+  /// errors are silently swallowed (the session stays alive), so supply
+  /// [onError] if you need to observe failures. Calling
   /// startSession while a session is active first stops the previous one; the
   /// serialization chain is not reset, so the new session's first read still
   /// waits for any still-in-flight previous read (no overlap across a replace).
@@ -117,8 +119,11 @@ class NfcHubReader {
     );
   }
 
-  /// Stops the active session and releases its subscription. No-op if there is
-  /// no active session. Safe to call repeatedly.
+  /// Stops the active session and releases its subscription: no further tags
+  /// are delivered. No-op if there is no active session; safe to call
+  /// repeatedly. Note this does NOT await an [onDiscovered] callback that is
+  /// already in flight — that call runs to completion in the background, so
+  /// "stopped" means "no more deliveries", not "all reader activity finished".
   Future<void> stopSession() async {
     final sub = _session;
     _session = null;

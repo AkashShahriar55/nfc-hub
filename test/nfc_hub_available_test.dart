@@ -3,8 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nfc_hub/nfc_hub.dart';
 import 'package:nfc_hub/src/platform/android_nfc_manager.dart';
 
-/// A manager whose getNfcState() returns a scripted value, and which records
-/// whether getNfcState() was called. Everything else is inherited.
+/// A manager whose getNfcState() returns a scripted value. Everything else is
+/// inherited.
 class _FakeManager extends AndroidNfcManager {
   _FakeManager()
       : super(
