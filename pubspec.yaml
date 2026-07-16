@@ -1,7 +1,7 @@
-name: ccid
-description: "A Flutter plugin for smart card reader using CCID protocol with PC/SC-like APIs."
-version: 0.1.8
-homepage: https://github.com/nfcim/ccid
+name: nfc_hub
+description: "A Flutter plugin for reading NFC tags through external CCID/PC-SC readers and the device's built-in NFC antenna."
+version: 0.6.0
+homepage: https://github.com/cheqplease/nfc_hub
 
 environment:
   sdk: ">=3.5.0 <4.0.0"
@@ -19,20 +19,21 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
+  fake_async: ^1.3.3
 
 flutter:
   plugin:
     platforms:
       android:
-        package: im.nfc.ccid
-        pluginClass: CcidPlugin
+        package: com.cheqplease.nfchub
+        pluginClass: NfcHubPlugin
       ios:
-        pluginClass: CcidPlugin
+        pluginClass: NfcHubPlugin
         sharedDarwinSource: true
       macos:
-        pluginClass: CcidPlugin
+        pluginClass: NfcHubPlugin
         sharedDarwinSource: true
       linux:
-        pluginClass: CcidPlugin
+        pluginClass: NfcHubPlugin
       windows:
-        pluginClass: CcidPluginCApi
+        pluginClass: NfcHubPluginCApi

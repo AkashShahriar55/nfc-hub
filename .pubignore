@@ -1,0 +1,33 @@
+# pub uses .pubignore INSTEAD OF .gitignore in the same directory, so this
+# file must restate the packaging-relevant .gitignore rules -- otherwise
+# build artifacts (e.g. build/, .dart_tool/) get bundled into the published
+# package.
+
+# Internal planning/spec docs (superpowers workflow artifacts) -- not part
+# of the published package.
+docs/
+
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.buildlog/
+.history
+.svn/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# Flutter/Dart/Pub related
+.dart_tool/
+build/
+
+# FVM Version Cache
+.fvm/

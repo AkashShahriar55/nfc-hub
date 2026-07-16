@@ -1,27 +1,40 @@
-// This is a basic Flutter widget test.
+// A smoke test for the harness home screen.
 //
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
+// This intentionally does NOT pump the real `MyApp()`: that widget builds
+// a real `NfcHub`, which would hit platform channels that don't exist in
+// the widget-test environment and hang/fail. Instead it pumps
+// `HarnessHome` directly with injected empty streams, exercising the same
+// widget tree `MyApp` wires up without touching any platform channel.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nfc_hub/nfc_hub.dart';
 
-import 'package:ccid_example/main.dart';
+import 'package:nfc_hub_example/connection_status_bar.dart';
+import 'package:nfc_hub_example/harness_home.dart';
 
 void main() {
-  testWidgets('Verify Platform version', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
-
-    // Verify that platform version is retrieved.
-    expect(
-      find.byWidgetPredicate(
-        (Widget widget) =>
-            widget is Text && widget.data!.startsWith('Running on:'),
+  testWidgets('HarnessHome renders the status bar and the empty-state hint',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: HarnessHome(
+            tags: Stream<TagDriver>.empty(),
+            connectionState: Stream<CcidConnectionState>.empty(),
+          ),
+        ),
       ),
+    );
+    await tester.pump();
+
+    // The empty-state hint is shown when no tag has been detected yet.
+    expect(
+      find.text('Tap a tag or place a card on a reader…'),
       findsOneWidget,
     );
+
+    // The dual-source connection status bar is always present.
+    expect(find.byType(ConnectionStatusBar), findsOneWidget);
   });
 }
