@@ -5,6 +5,8 @@ library;
 export 'src/nfc_hub_api.dart'
     show CcidSourceFilter, CcidConnectionState, NfcUnavailableReason;
 export 'src/nfc_hub_base.dart' show NfcHub, CcidCard;
+export 'src/nfc_hub_reader.dart'
+    show NfcHubReader, NfcTag, NfcConnectionState, NfcSource;
 export 'src/ndef.dart' show NdefRecord, parseNdefRecords, parseTlvForNdefMessage;
 export 'src/platform/platform_interface.dart' show NfcHubPlatform;
 export 'src/source/ccid_source.dart' show ExternalReaderState;
