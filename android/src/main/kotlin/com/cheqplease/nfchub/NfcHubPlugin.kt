@@ -9,6 +9,10 @@ import android.content.IntentFilter
 import android.hardware.usb.*
 import android.nfc.NfcAdapter
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 import io.flutter.Log
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
@@ -28,6 +32,16 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     private lateinit var appContext: Context
     private lateinit var usbManager: UsbManager
     private var readers = mutableMapOf<String, Reader>()
+
+    // CCID USB I/O (iccPowerOn, xfrBlock, device close) is BLOCKING -- USB bulk
+    // transfers with multi-second timeouts. Method-channel handlers run on the
+    // main (platform) thread, so running these there janks/ANRs the UI once the
+    // auto-detect poll loop + eager reads issue many transceives. Run all CCID
+    // USB work on this dedicated SERIAL background thread (single-threaded so a
+    // reader's Ccid, incl. its CCID sequence counter, is only ever touched by
+    // one thread), and post result.success/error back to the main thread.
+    private val ccidExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     // --- Built-in (reader-mode) NFC state ---
     // One controller for the plugin's lifetime: it owns the handle->Tag map
@@ -71,17 +85,31 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                                 Log.e(TAG, "Reader not found")
                                 return
                             }
-                            val connected = connectToInterface(device, reader.interfaceIdx)
-                            if (connected != null) {
-                                val (ccid, atr) = connected
-                                readers[reader.name] = reader.copy(ccid = ccid, result = null)
-                                reader.result!!.success(atr.toHexString())
-                            } else {
-                                reader.result!!.error(
-                                    "CCID_READER_CONNECT_ERROR",
-                                    "Failed to connect",
-                                    null
-                                )
+                            // Blocking USB work off the main thread (same reason
+                            // as connect()); complete the pending Result on the
+                            // main thread once connected.
+                            ccidExecutor.execute {
+                                try {
+                                    val connected = connectToInterface(device, reader.interfaceIdx)
+                                    mainHandler.post {
+                                        if (connected != null) {
+                                            val (ccid, atr) = connected
+                                            readers[reader.name] = reader.copy(ccid = ccid, result = null)
+                                            reader.result!!.success(atr.toHexString())
+                                        } else {
+                                            reader.result!!.error(
+                                                "CCID_READER_CONNECT_ERROR",
+                                                "Failed to connect",
+                                                null
+                                            )
+                                        }
+                                    }
+                                } catch (e: Throwable) {
+                                    Log.e(TAG, "CCID connect (post-permission) failed off-thread: ${e.message}", e)
+                                    mainHandler.post {
+                                        reader.result?.error("CCID_READER_CONNECT_ERROR", e.message, null)
+                                    }
+                                }
                             }
                         }
                     } else {
@@ -150,11 +178,23 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                     result.error("CCID_READER_NOT_CONNECTED", "Reader not connected", null)
                     return
                 }
-                try {
-                    val resp = ccid.xfrBlock(capdu.hexToByteArray())
-                    result.success(resp.toHexString())
-                } catch (e: CcidException) {
-                    result.error("CCID_TRANSCEIVE_ERROR", e.message, null)
+                // xfrBlock is a blocking USB bulk transfer; run it off the main
+                // thread so the poll loop + eager reads never jank the UI.
+                // Catch Throwable, not just CcidException: xfrBlock's parse path
+                // can throw NegativeArraySizeException / ArrayIndexOutOfBounds on
+                // a malformed reader response. On the main thread Flutter caught
+                // any such escape and returned an error reply; off-thread it would
+                // escape this Runnable, orphan `result`, and hang the Dart await
+                // FOREVER -- which freezes CcidSource's poll loop (its _ticking
+                // guard never clears). EVERY path here MUST complete `result`.
+                ccidExecutor.execute {
+                    try {
+                        val resp = ccid.xfrBlock(capdu.hexToByteArray())
+                        mainHandler.post { result.success(resp.toHexString()) }
+                    } catch (e: Throwable) {
+                        Log.e(TAG, "CCID transceive failed off-thread: ${e.message}", e)
+                        mainHandler.post { result.error("CCID_TRANSCEIVE_ERROR", e.message, null) }
+                    }
                 }
             }
 
@@ -165,13 +205,26 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                     result.error("CCID_READER_NOT_FOUND", "Reader not found", null)
                     return
                 }
-                // Release the held USB connection, not just the reference --
-                // otherwise the poll loop's removal/re-insertion cycle leaks a
-                // connection on every card removal (same bug class as the
-                // connect() failure-path leak).
-                reader.ccid?.close()
+                // Clear the reference on the main thread immediately so any
+                // subsequent transceive sees "not connected", then release the
+                // held USB connection on the CCID executor -- serialized after
+                // any transceive already queued for this reader, and off the
+                // main thread since close() does USB teardown. Releasing the
+                // connection (not just the reference) is what stops the poll
+                // loop's removal/re-insertion cycle leaking one per removal.
+                val ccid = reader.ccid
                 readers[name] = reader.copy(ccid = null)
-                result.success(null)
+                ccidExecutor.execute {
+                    try {
+                        ccid?.close()
+                        mainHandler.post { result.success(null) }
+                    } catch (e: Throwable) {
+                        // Must still complete `result` -- an orphaned Result here
+                        // hangs the poll loop's disconnect await (see transceive).
+                        Log.e(TAG, "CCID disconnect failed off-thread: ${e.message}", e)
+                        mainHandler.post { result.error("CCID_DISCONNECT_ERROR", e.message, null) }
+                    }
+                }
             }
 
             "nfcStartReaderMode" -> {
@@ -243,6 +296,7 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         channel.setMethodCallHandler(null)
+        ccidExecutor.shutdown()
     }
 
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
@@ -373,13 +427,28 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             usbManager.requestPermission(device, pendingIntent)
             return
         } else {
-            val connected = connectToInterface(device, reader.interfaceIdx)
-            if (connected != null) {
-                val (ccid, atr) = connected
-                readers[name] = reader.copy(ccid = ccid)
-                result.success(atr.toHexString())
-            } else {
-                result.error("CCID_READER_CONNECT_ERROR", "Failed to connect", null)
+            // connectToInterface does blocking USB work (openDevice, iccPowerOn
+            // with a multi-second timeout). Run it on the CCID executor so an
+            // empty-reader poll tick can't block the main thread on a slow/failed
+            // power-on. Mutate the readers map back on the main thread.
+            ccidExecutor.execute {
+                try {
+                    val connected = connectToInterface(device, reader.interfaceIdx)
+                    mainHandler.post {
+                        if (connected != null) {
+                            val (ccid, atr) = connected
+                            readers[name] = reader.copy(ccid = ccid)
+                            result.success(atr.toHexString())
+                        } else {
+                            result.error("CCID_READER_CONNECT_ERROR", "Failed to connect", null)
+                        }
+                    }
+                } catch (e: Throwable) {
+                    // Must still complete `result` -- an orphaned Result here hangs
+                    // the poll loop's connect await (see transceive).
+                    Log.e(TAG, "CCID connect failed off-thread: ${e.message}", e)
+                    mainHandler.post { result.error("CCID_READER_CONNECT_ERROR", e.message, null) }
+                }
             }
         }
     }
