@@ -221,19 +221,17 @@ void main() {
     });
 
     test(
-        'recognizes a FeliCa card by its IDm even though every other '
-        'positive probe (Type 2 CC read, ISO-DEP SELECT, MIFARE auth) '
-        'fails (regression test matching real ACR122U + FeliCa hardware: '
-        'Get UID succeeds and returns the IDm, but nothing else does)',
-        () async {
+        'recognizes a FeliCa card by a FeliCa Polling response even though '
+        'every other positive probe (Type 2 CC read, ISO-DEP SELECT, MIFARE '
+        'auth) fails', () async {
       NfcHubPlatform.instance = _FakeCcidPlatform({
-        'FFCA000000': 'AABBCCDDEE0011229000',
-        'FFB0000304': '6A82',
-        // '00A4040000' (SELECT) deliberately unmapped: the fake platform
-        // throws for it, which _tryTransceive treats as "no response" —
-        // an *error* status word (any 4+ hex chars) would otherwise
-        // satisfy the SELECT probe's loose "got a response" heuristic and
-        // misclassify this as IsoDepTag.
+        // The FeliCa-specific Polling command answers -> genuinely NFC-F.
+        'FF00000009D440010600FFFF0000':
+            'D541001201AABBCCDDEE0011220102030405060708' '9000',
+        'FFCA000000': 'AABBCCDDEE0011229000', // Get UID (for the .idm read)
+        'FFB0000304': '6A82', // not Type 2
+        // '00A4040000' (SELECT) and the Type A poll are deliberately unmapped:
+        // the fake throws for them, so ISO-DEP and MIFARE probes fail first.
       });
       final card = CcidCard('fake-reader');
 
@@ -242,6 +240,27 @@ void main() {
       expect(driver, isA<FelicaTag>());
       expect(await (driver as FelicaTag).idm,
           equals([0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x00, 0x11, 0x22]));
+    });
+
+    test(
+        'a card that answers Get UID but NOT a FeliCa Polling is NOT '
+        'misidentified as FeliCa (regression: a MIFARE card whose '
+        'default-key auth failed used to be caught by the Get-UID-based '
+        'FeliCa probe)', () async {
+      NfcHubPlatform.instance = _FakeCcidPlatform({
+        // Answers Get UID (as any ISO14443-A card does)...
+        'FFCA000000': '04AABBCC9000',
+        'FFB0000304': '6A82', // not Type 2
+        // ...but the FeliCa Polling, the Type A poll (MIFARE), the SELECT,
+        // and the Type B poll are all unmapped -> the fake throws -> every
+        // family probe fails. The card must NOT come back as FelicaTag.
+      });
+      final card = CcidCard('fake-reader');
+
+      await expectLater(
+        identifyTag(card),
+        throwsA(isA<UnrecognizedTagException>()),
+      );
     });
 
     test(

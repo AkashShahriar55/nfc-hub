@@ -199,11 +199,17 @@ Future<TagDriver> _identifyByProbing(
 
   final felica = FelicaTag(backend.nfcF(), atr: atr);
   try {
-    final idm = await felica.idm;
-    log.add('FeliCa idm -> succeeded, idm=${hex.encode(idm)}');
+    // Confirm this is really NFC-F with a FeliCa-SPECIFIC command (Polling,
+    // via pmm) -- NOT the old `idm` check, which was a PC/SC Get-UID that
+    // ANY card answers. That made a MIFARE Classic card whose default-key
+    // auth failed above (non-default keys, or a transient poll after a
+    // glitchy power-on) get misidentified as FeliCa. A MIFARE / ISO14443-A
+    // card does not answer a FeliCa Polling command, so pmm fails for it.
+    final pmm = await felica.pmm;
+    log.add('FeliCa polling -> succeeded, pmm=${hex.encode(pmm)}');
     return felica;
   } catch (e) {
-    log.add('FeliCa idm -> failed: $e');
+    log.add('FeliCa polling -> failed: $e');
   }
 
   try {
