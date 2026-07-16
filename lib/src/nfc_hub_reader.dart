@@ -60,6 +60,13 @@ class NfcHubReader {
 
   final NfcHub _hub;
 
+  StreamSubscription<NfcTag>? _session;
+
+  // Serializes onDiscovered: each call is chained onto the previous one's
+  // Future so the (N+1)th never begins until the Nth completes. Reset on every
+  // startSession so a new session starts with a clean chain.
+  Future<void> _chain = Future<void>.value();
+
   /// A cheap snapshot of whether any source can read right now. See
   /// [NfcHub.isAvailable].
   Future<bool> isAvailable() => _hub.isAvailable();
@@ -70,4 +77,47 @@ class NfcHubReader {
 
   /// Opens the system NFC settings screen so the user can enable NFC.
   Future<void> openNfcSettings() => _hub.openNfcSettings();
+
+  /// Starts auto-detecting tags from all sources (or the one named by [from]).
+  ///
+  /// [onDiscovered] is called once per tag as it arrives; if it returns a
+  /// Future it is awaited before the next tag is delivered, so reads on one tag
+  /// never overlap the next (important for the single-threaded CCID reader). A
+  /// throwing/failing [onDiscovered] is isolated — it does not tear down the
+  /// session. [onError], if given, receives stream errors. Calling
+  /// startSession while a session is active first stops the previous one.
+  void startSession({
+    required FutureOr<void> Function(NfcTag tag) onDiscovered,
+    void Function(Object error)? onError,
+    NfcSource? from,
+  }) {
+    // Replace any active session. Cancel is fire-and-forget: the synchronous
+    // prefix here (reading and nulling _session) completes before anything
+    // else touches it, so no new subscription races the old one.
+    final previous = _session;
+    _session = null;
+    if (previous != null) unawaited(previous.cancel());
+    _chain = Future<void>.value();
+
+    _session = _hub.tagStream(from: from?.toFilter()).listen(
+      (tag) {
+        _chain = _chain.then((_) async {
+          try {
+            await onDiscovered(tag);
+          } catch (_) {
+            // A throwing callback must not break the session or the chain.
+          }
+        });
+      },
+      onError: (Object error) => onError?.call(error),
+    );
+  }
+
+  /// Stops the active session and releases its subscription. No-op if there is
+  /// no active session. Safe to call repeatedly.
+  Future<void> stopSession() async {
+    final sub = _session;
+    _session = null;
+    await sub?.cancel();
+  }
 }
