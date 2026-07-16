@@ -109,6 +109,27 @@ class NfcHub {
 
   /// Opens the system NFC settings screen, so the user can turn NFC on.
   Future<void> openNfcSettings() => _manager.openNfcSettings();
+
+  /// A cheap, side-effect-free snapshot of whether any source can read right
+  /// now: true when the phone's NFC is enabled, or at least one CCID/PC-SC
+  /// reader is attached. Deliberately does NOT start the CCID poll loop (so it
+  /// never triggers the USB permission dialog) — it only reads the NFC state
+  /// and lists readers. Any error resolving either source is treated as "that
+  /// source is unavailable" rather than propagating.
+  Future<bool> isAvailable() async {
+    var nfcEnabled = false;
+    try {
+      nfcEnabled = (await _manager.getNfcState()) == NfcState.enabled;
+    } catch (_) {
+      nfcEnabled = false;
+    }
+    if (nfcEnabled) return true;
+    try {
+      return (await listReaders()).isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
 }
 
 class CcidCard {
