@@ -171,6 +171,27 @@ void main() {
       expect(driver, isA<Type2Tag>());
     });
 
+    test(
+        'recognizes a MIFARE Classic card by its SAK (from the PN532 poll) '
+        'WITHOUT needing default-key auth -- a custom-key card, or one whose '
+        'PC/SC pseudo-ATR was degenerate, is still MIFARE Classic', () async {
+      NfcHubPlatform.instance = _FakeCcidPlatform({
+        'FFCA000000': '04AABBCC9000', // Get UID
+        'FFB0000304': '6A82', // not Type 2
+        // '00A4040000' (SELECT) unmapped -> not ISO-DEP.
+        // PN532 Type A poll returns SAK 0x08 (MIFARE Classic 1K).
+        'FF00000004D44A0100': 'D54B01010004080404AABBCC9000',
+        // NO 'FF82...'/'FF86...' auth capdus scripted: if identifyTag tried to
+        // authenticate, the fake would throw -- so this proves detection does
+        // NOT depend on default-key auth succeeding.
+      });
+      final card = CcidCard('fake-reader');
+
+      final driver = await identifyTag(card);
+
+      expect(driver, isA<MifareClassicTag>());
+    });
+
     test('recognizes an ISO-DEP card via a SELECT response', () async {
       NfcHubPlatform.instance = _FakeCcidPlatform({
         'FFCA000000': '00019000',

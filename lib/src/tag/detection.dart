@@ -9,6 +9,7 @@ import 'felica.dart';
 import 'iso_b.dart';
 import 'iso_dep.dart';
 import 'mifare_classic.dart';
+import 'mifare_info.dart';
 import 'tag_driver.dart';
 import 'type2.dart';
 import '../apdu.dart';
@@ -190,11 +191,25 @@ Future<TagDriver> _identifyByProbing(
   }
 
   try {
-    final mifare = MifareClassicTag(await backend.mifareClassic(), atr: atr);
-    await mifare.authenticateWithDefaultKeys(0);
-    return mifare;
+    final mifareTransport = await backend.mifareClassic();
+    final family = mifareFamilyFromSak(mifareTransport.sak);
+    // Identify MIFARE Classic authoritatively by its SAK (per NXP AN10833),
+    // NOT by whether default-key auth happens to succeed. A card with custom
+    // keys, or one that reached this probing path only because its PC/SC
+    // pseudo-ATR was degenerate (a contactless card's iccPowerOn ATR can be),
+    // is still a genuine MIFARE Classic and must be recognized. The PN532
+    // poll that built this transport already read the real SAK.
+    if (family == MifareFamily.classic1k ||
+        family == MifareFamily.classic4k ||
+        family == MifareFamily.mini) {
+      log.add('MIFARE poll -> SAK 0x${mifareTransport.sak.toRadixString(16)} '
+          '(${mifareFamilyLabel(family)})');
+      return MifareClassicTag(mifareTransport, atr: atr);
+    }
+    log.add('MIFARE poll -> SAK 0x${mifareTransport.sak.toRadixString(16)} '
+        'is not a MIFARE Classic family');
   } catch (e) {
-    log.add('MIFARE default-key auth -> failed: $e');
+    log.add('MIFARE poll -> failed: $e');
   }
 
   final felica = FelicaTag(backend.nfcF(), atr: atr);
