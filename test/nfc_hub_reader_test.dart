@@ -160,6 +160,46 @@ void main() {
     expect(events, ['start:A', 'end:A', 'start:B', 'end:B']);
   });
 
+  test(
+      'startSession replace waits for an in-flight onDiscovered before the '
+      'next session reads', () async {
+    final hub = _FakeNfcHub();
+    final reader = NfcHubReader.forTesting(hub);
+    final events = <String>[];
+    final gateA = Completer<void>();
+
+    // First session: A blocks on gateA while "in flight".
+    reader.startSession(onDiscovered: (tag) async {
+      final name = (tag as _FakeTag).name;
+      events.add('start:$name');
+      if (name == 'A') await gateA.future;
+      events.add('end:$name');
+    });
+    hub.tagController.add(_FakeTag('A'));
+    await pumpEventQueue();
+
+    // A has started but is gated (still in flight).
+    expect(events, ['start:A']);
+
+    // Replace the session while A is still running.
+    reader.startSession(onDiscovered: (tag) async {
+      events.add('start:${(tag as _FakeTag).name}');
+      events.add('end:${tag.name}');
+    });
+    hub.tagController.add(_FakeTag('B'));
+    await pumpEventQueue();
+
+    // B must NOT have started while A is still gated — serialization holds
+    // across the replace.
+    expect(events, ['start:A']);
+
+    gateA.complete();
+    await pumpEventQueue();
+
+    // A finishes before B starts — no overlap across the session replace.
+    expect(events, ['start:A', 'end:A', 'start:B', 'end:B']);
+  });
+
   test('a throwing onDiscovered does not stop later deliveries', () async {
     final hub = _FakeNfcHub();
     final reader = NfcHubReader.forTesting(hub);

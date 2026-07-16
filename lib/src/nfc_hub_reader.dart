@@ -62,9 +62,12 @@ class NfcHubReader {
 
   StreamSubscription<NfcTag>? _session;
 
-  // Serializes onDiscovered: each call is chained onto the previous one's
-  // Future so the (N+1)th never begins until the Nth completes. Reset on every
-  // startSession so a new session starts with a clean chain.
+  // Serializes onDiscovered across the reader's entire lifetime: each call is
+  // chained onto the previous one's Future so the (N+1)th never begins until
+  // the Nth completes. This is a rolling future that always resolves and is
+  // never reset — so serialization holds even across a startSession replace: a
+  // new session's first read waits for any still-in-flight previous read,
+  // preserving the single-threaded-reader guarantee.
   Future<void> _chain = Future<void>.value();
 
   /// A cheap snapshot of whether any source can read right now. See
@@ -85,7 +88,9 @@ class NfcHubReader {
   /// never overlap the next (important for the single-threaded CCID reader). A
   /// throwing/failing [onDiscovered] is isolated — it does not tear down the
   /// session. [onError], if given, receives stream errors. Calling
-  /// startSession while a session is active first stops the previous one.
+  /// startSession while a session is active first stops the previous one; the
+  /// serialization chain is not reset, so the new session's first read still
+  /// waits for any still-in-flight previous read (no overlap across a replace).
   void startSession({
     required FutureOr<void> Function(NfcTag tag) onDiscovered,
     void Function(Object error)? onError,
@@ -97,7 +102,6 @@ class NfcHubReader {
     final previous = _session;
     _session = null;
     if (previous != null) unawaited(previous.cancel());
-    _chain = Future<void>.value();
 
     _session = _hub.tagStream(from: from?.toFilter()).listen(
       (tag) {
