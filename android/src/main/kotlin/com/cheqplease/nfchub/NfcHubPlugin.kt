@@ -70,6 +70,16 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     private val nfcStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context, intent: Intent) {
             if (intent.action == NfcAdapter.ACTION_ADAPTER_STATE_CHANGED) {
+                val adapterState = intent.getIntExtra(
+                    NfcAdapter.EXTRA_ADAPTER_STATE, NfcAdapter.STATE_OFF
+                )
+                // The app asked for reader mode while NFC was off (or the user toggled it
+                // off and on): enableReaderMode was a no-op then, so re-apply it the
+                // moment the adapter comes up -- otherwise built-in NFC stays dead until
+                // the app restarts its session.
+                if (adapterState == NfcAdapter.STATE_ON && nfcReaderModeRequested) {
+                    nfcController.startReaderMode()
+                }
                 val map = HashMap<String, Any?>()
                 map["type"] = "nfcStateChanged"
                 map["state"] = nfcController.nfcState()

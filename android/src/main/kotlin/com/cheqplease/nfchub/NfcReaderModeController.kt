@@ -44,6 +44,7 @@ class NfcReaderModeController(
         val flags = NfcAdapter.FLAG_READER_NFC_A or
             NfcAdapter.FLAG_READER_NFC_B or
             NfcAdapter.FLAG_READER_NFC_F or
+            NfcAdapter.FLAG_READER_NFC_V or
             NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK or
             NfcAdapter.FLAG_READER_NO_PLATFORM_SOUNDS
         adapter?.enableReaderMode(a, this, flags, null)
@@ -56,6 +57,11 @@ class NfcReaderModeController(
     }
 
     override fun onTagDiscovered(tag: Tag) {
+        // Android invalidates previous Tag objects once a new tag is enumerated
+        // ("Tag out of date"); holding them only leaks memory and open tech
+        // connections. One discovery at a time is reader mode's model, so a new
+        // tag supersedes ALL previous handles.
+        closeAll()
         val handle = synchronized(tags) { val h = nextHandle++; tags[h] = tag; h }
         val techList = tag.techList.toList()
         val map = HashMap<String, Any?>()
