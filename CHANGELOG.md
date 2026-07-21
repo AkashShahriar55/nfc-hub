@@ -1,3 +1,25 @@
+## 0.7.0
+
+Reliability release.
+
+- **Fixed** the CCID poll loop freezing permanently when a USB permission
+  dialog was denied, ignored, or the reader detached mid-request.
+- **Fixed** duplicate tag deliveries: a seated card now emits exactly once
+  per presentation (no replay on resubscribe/session restart); same-tag
+  rediscoveries on the built-in antenna are debounced.
+- **Fixed** built-in-NFC tag I/O blocking the main thread (jank, presence-
+  check drops mid-read).
+- **Fixed** reader mode not re-arming when NFC is enabled mid-session.
+- **Fixed** MIFARE Classic cards being misidentified as ISO-DEP during
+  capability probing; ISO-DEP `historicalBytes` now returns the ATR's
+  historical bytes rather than the whole ATR.
+- The CCID liveness probe no longer interleaves with in-flight reads
+  (previously corrupted chained commands like DESFire GetVersion).
+- Unreadable taps now surface on `onError` / as stream errors instead of
+  being silently dropped.
+- **Breaking:** package now declares Android support only.
+- **Breaking:** removed the never-functional `AndroidNfcManager.tagLosses`.
+
 ## 0.6.0
 
 Built-in Android NFC support: `NfcHub().tagStream()` now emits `TagDriver`s

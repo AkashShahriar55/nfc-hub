@@ -45,8 +45,10 @@ class NfcTagDiscovery {
   });
 
   /// Opaque handle identifying this tag for the lifetime of its presence in
-  /// the field. Used to address subsequent transceive/auth/read calls and to
-  /// match a later `tagLost` event.
+  /// the field. Used to address subsequent transceive/auth/read calls; once
+  /// the tag leaves the field, those calls fail with a `TAG_LOST` platform
+  /// error (surfaced higher up as `TagLostException`) rather than a separate
+  /// loss event.
   final int handle;
 
   /// Android tech-class names for this tag (e.g. `IsoDep`, `MifareClassic`).
@@ -109,14 +111,10 @@ class AndroidNfcManager {
 
   final _discoveriesController =
       StreamController<NfcTagDiscovery>.broadcast();
-  final _tagLossesController = StreamController<int>.broadcast();
   final _nfcStateChangesController = StreamController<NfcState>.broadcast();
 
   /// Tags discovered by the phone's NFC antenna.
   Stream<NfcTagDiscovery> get discoveries => _discoveriesController.stream;
-
-  /// Handles of tags that have left the field.
-  Stream<int> get tagLosses => _tagLossesController.stream;
 
   /// Changes to the phone's NFC adapter state.
   Stream<NfcState> get nfcStateChanges => _nfcStateChangesController.stream;
@@ -129,8 +127,6 @@ class AndroidNfcManager {
       switch (type) {
         case 'tagDiscovered':
           _discoveriesController.add(_discoveryFromWire(map));
-        case 'tagLost':
-          _tagLossesController.add(map['handle'] as int);
         case 'nfcStateChanged':
           _nfcStateChangesController
               .add(_nfcStateFromWire(map['state'] as String));
@@ -142,8 +138,6 @@ class AndroidNfcManager {
       switch (type) {
         case 'tagDiscovered':
           _discoveriesController.addError(error, stackTrace);
-        case 'tagLost':
-          _tagLossesController.addError(error, stackTrace);
         case 'nfcStateChanged':
           _nfcStateChangesController.addError(error, stackTrace);
         default:
@@ -156,7 +150,6 @@ class AndroidNfcManager {
 
   void _onEventError(Object error, StackTrace stackTrace) {
     _discoveriesController.addError(error, stackTrace);
-    _tagLossesController.addError(error, stackTrace);
     _nfcStateChangesController.addError(error, stackTrace);
   }
 
@@ -228,7 +221,6 @@ class AndroidNfcManager {
   Future<void> dispose() async {
     await _sub.cancel();
     await _discoveriesController.close();
-    await _tagLossesController.close();
     await _nfcStateChangesController.close();
   }
 }
