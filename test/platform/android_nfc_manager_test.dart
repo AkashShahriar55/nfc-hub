@@ -246,17 +246,6 @@ void main() {
     expect(discovery.uid, Uint8List.fromList([1, 2, 3]));
   });
 
-  test('tagLost event surfaces the handle on tagLosses', () async {
-    final m = AndroidNfcManager();
-    addTearDown(m.dispose);
-    await pumpEventQueue();
-
-    final future = m.tagLosses.first;
-    sink!.success({'type': 'tagLost', 'handle': 42});
-
-    expect(await future, 42);
-  });
-
   test('nfcStateChanged event surfaces the decoded state on nfcStateChanges',
       () async {
     final m = AndroidNfcManager();
@@ -306,19 +295,15 @@ void main() {
 
   test(
       'a malformed event whose type cannot even be read fans out an error '
-      'to all three streams', () async {
+      'to both streams', () async {
     final m = AndroidNfcManager();
     addTearDown(m.dispose);
     await pumpEventQueue();
 
     final discoveryErrors = <Object>[];
-    final lossErrors = <Object>[];
     final stateErrors = <Object>[];
     addTearDown(m.discoveries
         .listen((_) {}, onError: (Object e) => discoveryErrors.add(e))
-        .cancel);
-    addTearDown(m.tagLosses
-        .listen((_) {}, onError: (Object e) => lossErrors.add(e))
         .cancel);
     addTearDown(m.nfcStateChanges
         .listen((_) {}, onError: (Object e) => stateErrors.add(e))
@@ -330,23 +315,26 @@ void main() {
     await pumpEventQueue();
 
     expect(discoveryErrors, hasLength(1));
-    expect(lossErrors, hasLength(1));
     expect(stateErrors, hasLength(1));
 
     // The underlying subscription must still survive this too.
-    final future = m.tagLosses.first;
-    sink!.success({'type': 'tagLost', 'handle': 7});
-    expect(await future, 7);
+    final future = m.discoveries.first;
+    sink!.success({
+      'type': 'tagDiscovered',
+      'handle': 7,
+      'techList': ['NfcA'],
+      'uid': [0x01],
+    });
+    expect((await future).handle, 7);
   });
 
-  test('a single event-channel subscription fans out to all three streams',
+  test('a single event-channel subscription fans out to both streams',
       () async {
     final m = AndroidNfcManager();
     addTearDown(m.dispose);
     await pumpEventQueue();
 
     final discoveryFuture = m.discoveries.first;
-    final lossFuture = m.tagLosses.first;
     final stateFuture = m.nfcStateChanges.first;
 
     sink!.success({
@@ -355,11 +343,9 @@ void main() {
       'techList': ['NfcA'],
       'uid': [0x01],
     });
-    sink!.success({'type': 'tagLost', 'handle': 1});
     sink!.success({'type': 'nfcStateChanged', 'state': 'enabled'});
 
     expect((await discoveryFuture).handle, 1);
-    expect(await lossFuture, 1);
     expect(await stateFuture, NfcState.enabled);
   });
 }

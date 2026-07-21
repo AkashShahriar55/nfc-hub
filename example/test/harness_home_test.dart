@@ -115,6 +115,38 @@ void main() {
   });
 
   testWidgets(
+      'a stream error (e.g. an unrecognized tap) shows a SnackBar instead '
+      'of becoming an unhandled zone error', (tester) async {
+    // Regression (final review, Finding 4): the harness listened without
+    // onError, so a per-tap failure like UnrecognizedTagException crashed
+    // the zone and hardware-validation scenario 9 was unobservable.
+    final tagsController = StreamController<TagDriver>.broadcast();
+    final statesController = StreamController<CcidConnectionState>.broadcast();
+    addTearDown(tagsController.close);
+    addTearDown(statesController.close);
+
+    await tester.pumpWidget(host(HarnessHome(
+      tags: tagsController.stream,
+      connectionState: statesController.stream,
+    )));
+
+    tagsController
+        .addError(const UnrecognizedTagException('unsupported tech'));
+    await tester.pump(); // deliver the error
+    await tester.pump(); // let the SnackBar animate in
+
+    expect(find.textContaining('Could not read tag'), findsOneWidget);
+
+    // The subscription survives: a good tag afterwards still appears.
+    tagsController.add(Type2Tag(_FakeType2Transport(
+      uid: Uint8List.fromList([0x04, 0x01, 0x02, 0x03]),
+      cc: Uint8List.fromList([0xE1, 0x10, 0x06, 0x00]),
+    )));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('04010203'), findsOneWidget);
+  });
+
+  testWidgets(
       'a tag whose readTagInfo() throws still appears (with its error), '
       'and a following good tag still appears', (tester) async {
     final tagsController = StreamController<TagDriver>.broadcast();

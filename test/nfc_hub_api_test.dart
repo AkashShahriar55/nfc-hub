@@ -164,6 +164,28 @@ void main() {
     // turn that FakeAsync's synchronous time-faking cannot fake. The same
     // seam `android_source_test.dart`/`android_nfc_manager_test.dart` use
     // (`pumpEventQueue()`, real timers) is reused here instead.
+    test('returns one shared stream per filter', () {
+      final manager = _FakeAndroidNfcManager();
+      final platform = _FakePlatform();
+      final hub = NfcHub(
+        androidNfcManager: manager,
+        ccidSource: CcidSource(platform),
+      );
+      expect(identical(hub.tagStream(), hub.tagStream()), isTrue);
+      expect(
+        identical(
+          hub.tagStream(from: const CcidSourceFilter.builtInNfc()),
+          hub.tagStream(from: const CcidSourceFilter.builtInNfc()),
+        ),
+        isTrue,
+      );
+      expect(
+        identical(hub.tagStream(),
+            hub.tagStream(from: const CcidSourceFilter.builtInNfc())),
+        isFalse,
+      );
+    });
+
     test(
         'no filter: emits tags from BOTH a fake Android source and a fake '
         'CCID source, interleaved', () async {
@@ -265,6 +287,43 @@ void main() {
             reason: 'Android source was never started under this filter');
 
         sub.cancel();
+      });
+    });
+
+    test(
+        "a reader-filtered tagStream does NOT consume another reader's "
+        'card: a later unfiltered tagStream still receives it', () {
+      // Regression (final review, Finding 1): the old mergeTagStreams
+      // filtered DOWNSTREAM of CcidSource's delivered-mark, so a session
+      // filtered to reader-1 consumed-and-discarded reader-2's card and no
+      // later listener could ever get it.
+      FakeAsync().run((async) {
+        final manager = _FakeAndroidNfcManager();
+        final platform = _FakePlatform()
+          ..readers = ['reader-1', 'reader-2']
+          ..cardsPresent.add('reader-2');
+        final hub = NfcHub(
+          androidNfcManager: manager,
+          ccidSource: CcidSource(platform),
+        );
+
+        final filtered = <TagDriver>[];
+        final filteredSub = hub
+            .tagStream(from: const CcidSourceFilter.reader('reader-1'))
+            .listen(filtered.add);
+        async.elapse(const Duration(milliseconds: 1500));
+        expect(filtered, isEmpty,
+            reason: "reader-2's card must not reach a reader-1 filter");
+
+        final all = <TagDriver>[];
+        final allSub = hub.tagStream().listen(all.add);
+        async.elapse(const Duration(milliseconds: 500));
+        expect(all, hasLength(1),
+            reason: "reader-2's card was never delivered to any matching "
+                'listener, so the unfiltered stream must still get it');
+
+        filteredSub.cancel();
+        allSub.cancel();
       });
     });
 

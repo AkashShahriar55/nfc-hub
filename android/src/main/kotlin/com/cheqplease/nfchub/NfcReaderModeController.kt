@@ -44,6 +44,7 @@ class NfcReaderModeController(
         val flags = NfcAdapter.FLAG_READER_NFC_A or
             NfcAdapter.FLAG_READER_NFC_B or
             NfcAdapter.FLAG_READER_NFC_F or
+            NfcAdapter.FLAG_READER_NFC_V or
             NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK or
             NfcAdapter.FLAG_READER_NO_PLATFORM_SOUNDS
         adapter?.enableReaderMode(a, this, flags, null)
@@ -56,6 +57,11 @@ class NfcReaderModeController(
     }
 
     override fun onTagDiscovered(tag: Tag) {
+        // Android invalidates previous Tag objects once a new tag is enumerated
+        // ("Tag out of date"); holding them only leaks memory and open tech
+        // connections. One discovery at a time is reader mode's model, so a new
+        // tag supersedes ALL previous handles.
+        closeAll()
         val handle = synchronized(tags) { val h = nextHandle++; tags[h] = tag; h }
         val techList = tag.techList.toList()
         val map = HashMap<String, Any?>()
@@ -134,20 +140,32 @@ class NfcReaderModeController(
         }
     }
 
+    private fun <T : Any> connectTech(h: Int, get: () -> T?, connect: (T) -> Unit): T {
+        synchronized(connected) {
+            @Suppress("UNCHECKED_CAST")
+            (connected[h] as? T)?.let { return it }
+        }
+        val tech = get() ?: throw TagGoneException("Tech unavailable for handle $h")
+        connect(tech)
+        synchronized(connected) { connected[h] = tech }
+        return tech
+    }
+
     private fun connectNfcA(h: Int, tag: Tag): NfcA =
-        (connected[h] as? NfcA) ?: NfcA.get(tag).also { it.connect(); connected[h] = it }
+        connectTech(h, { NfcA.get(tag) }, { it.connect() })
     private fun connectNfcB(h: Int, tag: Tag): NfcB =
-        (connected[h] as? NfcB) ?: NfcB.get(tag).also { it.connect(); connected[h] = it }
+        connectTech(h, { NfcB.get(tag) }, { it.connect() })
     private fun connectNfcF(h: Int, tag: Tag): NfcF =
-        (connected[h] as? NfcF) ?: NfcF.get(tag).also { it.connect(); connected[h] = it }
+        connectTech(h, { NfcF.get(tag) }, { it.connect() })
     private fun connectIsoDep(h: Int, tag: Tag): IsoDep =
-        (connected[h] as? IsoDep) ?: IsoDep.get(tag).also { it.connect(); connected[h] = it }
+        connectTech(h, { IsoDep.get(tag) }, { it.connect() })
     private fun connectMifare(h: Int, tag: Tag): MifareClassic =
-        (connected[h] as? MifareClassic) ?: MifareClassic.get(tag).also { it.connect(); connected[h] = it }
+        connectTech(h, { MifareClassic.get(tag) }, { it.connect() })
 
     private fun close(handle: Int) {
         synchronized(tags) { tags.remove(handle) }
-        (connected.remove(handle) as? android.nfc.tech.TagTechnology)?.let {
+        val tech = synchronized(connected) { connected.remove(handle) }
+        (tech as? android.nfc.tech.TagTechnology)?.let {
             try { it.close() } catch (_: Exception) {}
         }
     }

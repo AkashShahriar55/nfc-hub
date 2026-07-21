@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:developer' as developer;
 
+import 'package:flutter/services.dart';
+
 import '../nfc_hub_base.dart';
 import '../platform/platform_interface.dart';
 import '../tag/detection.dart';
@@ -52,6 +54,22 @@ class ReaderTaggedDriver {
   final TagDriver driver;
 }
 
+/// A [TagDriver] identified for a currently-**occupied** reader, held so it
+/// can be delivered to whichever [CcidSource.tags]/[CcidSource.taggedTags]
+/// subscriber sees it first -- see the class doc's delivery contract.
+/// [delivered] flips to true the moment the driver reaches a subscriber
+/// whose (optional) reader filter matches it (live forwarding at identify
+/// time, or replay to a first later matching subscriber) and gates every
+/// replay after that: a presentation is never replayed once ANY matching
+/// consumer has actually received it. A subscriber filtered to a DIFFERENT
+/// reader never marks it -- discarding an event must not consume it.
+class _HeldDriver {
+  _HeldDriver(this.driver);
+
+  final TagDriver driver;
+  bool delivered = false;
+}
+
 /// PC/SC Part 3 "Get Data" (Get UID) pseudo-APDU. Reused here purely as a
 /// liveness probe for an already-[_ReaderStatus.occupied] reader -- any
 /// contactless storage card answers it, so a throw/failure is a reliable
@@ -85,13 +103,15 @@ const _probeApdu = 'FFCA000000';
 ///    identified via [identifyTag], and the resulting driver is emitted on
 ///    [tags]. A throw means still no card -- stays **empty**, nothing
 ///    emitted.
-///  - **occupied**: sends the harmless [_probeApdu] via
-///    [NfcHubPlatform.transceive] as a liveness check. Success means the
-///    same card is still seated -- nothing is re-emitted (a card that stays
-///    put emits exactly once). A throw means the card was removed -- the
-///    reader moves back to **empty**, [NfcHubPlatform.disconnect] releases
-///    the connection the emitted [TagDriver] was holding, and the next
-///    tick's empty-handling can pick up a re-insertion.
+///  - **occupied**: sends the harmless [_probeApdu] through the occupied
+///    reader's [CcidCard] (so it's serialized with, and skipped entirely
+///    during, any in-flight driver transceive -- see [_probeStillPresent])
+///    as a liveness check. Success means the same card is still seated --
+///    nothing is re-emitted (a card that stays put emits exactly once). A
+///    throw means the card was removed -- the reader moves back to
+///    **empty**, [NfcHubPlatform.disconnect] releases the connection the
+///    emitted [TagDriver] was holding, and the next tick's empty-handling
+///    can pick up a re-insertion.
 ///
 /// [tags], [taggedTags], and [readerStates] share one listener count, and
 /// the connect/identify/emit path runs whenever ANY of them is listening.
@@ -100,15 +120,29 @@ const _probeApdu = 'FFCA000000';
 /// before the user hits "read" -- and a card seated in that window would be
 /// identified while nothing is listening to [tags] yet. To avoid losing
 /// that card, [CcidSource] holds the built [TagDriver] for every
-/// **occupied** reader in [_occupiedDrivers], and [tags]/[taggedTags] are
-/// built with [Stream.multi]: each NEW subscription first synchronously
-/// replays the drivers currently held for occupied readers, then forwards
-/// everything the live poll loop emits from that point on. `Stream.multi`
-/// runs its callback once per subscription (unlike `.broadcast()`, whose
-/// `add` always reaches every current listener at once), so the replay
-/// only ever reaches the newly-attached subscriber -- listeners already
-/// attached see nothing extra, and a card that stays put still emits
-/// exactly once to any listener that was already there when it arrived.
+/// **occupied** reader in [_occupiedDrivers] as a [_HeldDriver].
+///
+/// **Each card presentation is replayed at most once** -- and only to a
+/// consumer whose filter actually matches it. Live delivery at identify
+/// time can fan out to SEVERAL simultaneous [tags]/[taggedTags] listeners
+/// (that is documented behavior); the moment a matching listener receives
+/// it live, the presentation is marked [_HeldDriver.delivered] and gated
+/// out of every later replay. A presentation NOT consumed by any matching
+/// listener (nobody listening yet, or only listeners filtered to OTHER
+/// readers) sits held and undelivered until [tags]/[taggedTags] -- built
+/// with [Stream.multi] -- attach a new subscription: each NEW
+/// subscription's callback synchronously scans the held drivers and replays
+/// only the still-undelivered ones its own filter matches, marking each
+/// delivered as it does. A widget rebuild or session restart that cancels
+/// and re-listens therefore does NOT see a card its predecessor
+/// subscription already received -- and a second listener joining after the
+/// first already got it sees nothing either. Crucially, a subscription
+/// filtered to reader A never consumes reader B's card: B's presentation
+/// stays held for the first later subscriber that DOES match it.
+/// `Stream.multi` runs its callback once per subscription (unlike
+/// `.broadcast()`, whose `add` always reaches every current listener at
+/// once), so this replay-and-mark check only ever runs for the
+/// newly-attached subscriber.
 ///
 /// A reader that disappears from [NfcHubPlatform.listReaders] entirely
 /// (unplugged) is dropped from tracking outright, disconnecting first if it
@@ -137,12 +171,18 @@ class CcidSource implements TagSource {
   CcidSource(
     this._platform, {
     this.pollInterval = const Duration(milliseconds: 500),
-  });
+    DateTime Function()? now,
+  }) : _now = now ?? DateTime.now;
 
   final NfcHubPlatform _platform;
   final Duration pollInterval;
 
-  StreamController<TagDriver>? _tagsController;
+  /// Clock used to decide whether a card has had recent activity (see
+  /// [_probeStillPresent]). Overridable purely for testability -- shared
+  /// with each occupied reader's [CcidCard] (wired in [_tryConnect]) so both
+  /// sides compare against the same notion of "now".
+  final DateTime Function() _now;
+
   StreamController<ReaderTaggedDriver>? _taggedTagsController;
   StreamController<List<ExternalReaderState>>? _statesController;
   Timer? _timer;
@@ -151,13 +191,23 @@ class CcidSource implements TagSource {
 
   final Map<String, _ReaderStatus> _status = {};
 
-  /// The built [TagDriver] for every currently-**occupied** reader, keyed by
+  /// The [_HeldDriver] for every currently-**occupied** reader, keyed by
   /// reader name. Populated the instant [_tryConnect] identifies a newly
   /// seated card, and cleared the instant that reader goes back to
   /// **empty** (probe failure, vanish, or [dispose]). This is the source of
-  /// truth [tags]/[taggedTags] replay to a subscriber that attaches after
-  /// the card was already identified -- see the class doc for why.
-  final Map<String, TagDriver> _occupiedDrivers = {};
+  /// truth [tags]/[taggedTags] consult to decide whether a subscriber that
+  /// attaches after the card was already identified still needs it -- see
+  /// the class doc for the exactly-once contract.
+  final Map<String, _HeldDriver> _occupiedDrivers = {};
+
+  /// The [CcidCard] backing every currently-**occupied** reader, keyed by
+  /// reader name. Populated alongside [_occupiedDrivers] in [_tryConnect] and
+  /// cleared everywhere [_occupiedDrivers] is cleared. [_probeStillPresent]
+  /// routes its liveness probe through this card (serialized with any
+  /// in-flight driver transceive) rather than the raw platform, and consults
+  /// its [CcidCard.lastActivity] to skip the probe while the app is actively
+  /// reading.
+  final Map<String, CcidCard> _occupiedCards = {};
 
   /// The occupied card's Get-UID probe response (hex), captured at connect
   /// time and keyed by reader name. Lets [_probeStillPresent] tell "the same
@@ -167,48 +217,76 @@ class CcidSource implements TagSource {
   /// [_occupiedDrivers].
   final Map<String, String> _occupiedUid = {};
 
-  @override
-  Stream<TagDriver> tags() {
-    // Stream.multi (isBroadcast: true) invokes this callback once per
-    // subscription, each with its OWN controller -- unlike a plain
-    // `.broadcast()` stream where a single `add` reaches every listener at
-    // once. That per-subscription isolation is what lets a NEW listener
-    // replay the currently-occupied readers' drivers without those events
-    // also reaching listeners that were already attached.
-    return Stream<TagDriver>.multi((controller) {
-      for (final driver in _occupiedDrivers.values) {
-        controller.add(driver);
-      }
-      final live = (_tagsController ??= StreamController<TagDriver>.broadcast(
+  /// Readers whose USB permission the user denied. connect() is NOT retried
+  /// for these (each retry re-shows the OS dialog); the reader must detach
+  /// and re-attach (it then leaves _status and this set) to be retried.
+  final Set<String> _permissionDenied = {};
+
+  /// The single shared live broadcast pipeline behind [tags] and
+  /// [taggedTags]. Created lazily; its onListen/onCancel keep the poll
+  /// loop's listener count single-sourced (a broadcast controller fires
+  /// onListen on the 0->1 listener transition and onCancel on the last
+  /// cancel, so it contributes at most one "someone is consuming tags" unit
+  /// to [_listenerCount] alongside [_statesController]).
+  StreamController<ReaderTaggedDriver> get _liveTaggedController =>
+      _taggedTagsController ??= StreamController<ReaderTaggedDriver>.broadcast(
         onListen: _onListen,
         onCancel: _onCancel,
-      ))
-          .stream
-          .listen(controller.add,
-              onError: controller.addError, onDone: controller.close);
-      controller.onCancel = live.cancel;
-    }, isBroadcast: true);
-  }
+      );
+
+  /// Thin wrapper over [taggedTags] that strips the reader name -- ALL
+  /// hold/replay/delivered-marking logic lives in [taggedTags], so the two
+  /// entry points can never disagree about whether a presentation was
+  /// consumed, and the poll-loop listener count stays single-sourced.
+  @override
+  Stream<TagDriver> tags() => taggedTags().map((tagged) => tagged.driver);
 
   /// The same tags as [tags], but paired with the reader that produced each
   /// one -- see [ReaderTaggedDriver]. Used by Task 7's unified stream to
-  /// implement `CcidSourceFilter.reader(name)`.
+  /// implement `CcidSourceFilter.reader(name)`, by passing that name as
+  /// [reader].
   ///
-  /// See [tags] for why this is built as a [Stream.multi]: it replays the
-  /// currently-occupied readers' drivers to each new subscriber only.
-  Stream<ReaderTaggedDriver> taggedTags() {
+  /// With a non-null [reader], only that reader's drivers are delivered --
+  /// and, crucially, only that reader's presentations are ever CONSUMED:
+  /// a filtered subscription neither replays nor marks-delivered a held
+  /// driver from any other reader, so another reader's card stays held for
+  /// the first later subscriber whose filter matches it (see the class doc).
+  ///
+  /// Built as a [Stream.multi] (isBroadcast: true): the callback runs once
+  /// per subscription, each with its OWN controller -- unlike a plain
+  /// `.broadcast()` stream where a single `add` reaches every listener at
+  /// once. That per-subscription isolation is what lets a NEW listener's
+  /// replay-and-mark scan run exactly once, for exactly that subscriber,
+  /// without a concurrent listener's attach racing it. The live path then
+  /// forwards from the one shared broadcast controller, marking the held
+  /// driver delivered only when this subscription actually forwards it to
+  /// its consumer.
+  Stream<ReaderTaggedDriver> taggedTags({String? reader}) {
     return Stream<ReaderTaggedDriver>.multi((controller) {
       for (final entry in _occupiedDrivers.entries) {
-        controller.add(ReaderTaggedDriver(entry.key, entry.value));
+        if (reader != null && entry.key != reader) continue;
+        final held = entry.value;
+        if (!held.delivered) {
+          held.delivered = true;
+          controller.add(ReaderTaggedDriver(entry.key, held.driver));
+        }
       }
-      final live = (_taggedTagsController ??=
-              StreamController<ReaderTaggedDriver>.broadcast(
-        onListen: _onListen,
-        onCancel: _onCancel,
-      ))
-          .stream
-          .listen(controller.add,
-              onError: controller.addError, onDone: controller.close);
+      final live = _liveTaggedController.stream.listen(
+        (tagged) {
+          if (reader != null && tagged.reader != reader) return;
+          // This event is reaching a real consumer -- mark the presentation
+          // spent so no later subscriber's replay scan hands it out again.
+          // (Guard on identity: the held driver may already belong to a
+          // NEWER presentation on the same reader.)
+          final held = _occupiedDrivers[tagged.reader];
+          if (held != null && identical(held.driver, tagged.driver)) {
+            held.delivered = true;
+          }
+          controller.add(tagged);
+        },
+        onError: controller.addError,
+        onDone: controller.close,
+      );
       controller.onCancel = live.cancel;
     }, isBroadcast: true);
   }
@@ -285,6 +363,7 @@ class CcidSource implements TagSource {
     for (final reader in vanished) {
       final wasOccupied = _status[reader] == _ReaderStatus.occupied;
       _status.remove(reader);
+      _permissionDenied.remove(reader);
       changed = true;
       // The reader itself is gone, so any connection held for its card is
       // no longer reachable through it -- release the handle rather than
@@ -296,6 +375,7 @@ class CcidSource implements TagSource {
         // tags()/taggedTags() during that await window replays a driver for a
         // card that is already gone, over a connection that is mid-teardown.
         _occupiedDrivers.remove(reader);
+        _occupiedCards.remove(reader);
         _occupiedUid.remove(reader);
         await _disconnectQuietly(reader);
       }
@@ -312,6 +392,7 @@ class CcidSource implements TagSource {
     for (final reader in readers) {
       final status = _status[reader];
       if (status == _ReaderStatus.empty) {
+        if (_permissionDenied.contains(reader)) continue;
         if (await _tryConnect(reader)) changed = true;
       } else if (status == _ReaderStatus.occupied) {
         if (!await _probeStillPresent(reader)) changed = true;
@@ -328,34 +409,57 @@ class CcidSource implements TagSource {
     final CcidCard card;
     try {
       card = await _platform.connect(reader);
+    } on PlatformException catch (e) {
+      if (e.code == 'CCID_PERMISSION_DENIED') _permissionDenied.add(reader);
+      return false;
     } catch (_) {
       return false; // No card seated yet -- stays empty, nothing to report.
     }
 
     _status[reader] = _ReaderStatus.occupied;
+    // Share one clock between this card and the source, so lastActivity
+    // (stamped on the card) and _now() (read by _probeStillPresent) agree on
+    // "now" -- matters under a test's injected fake clock. CcidSource is the
+    // one sanctioned production writer of CcidCard.now (the @visibleForTesting
+    // annotation exists to keep APPS from setting it), hence the ignore.
+    // ignore: invalid_use_of_visible_for_testing_member
+    card.now = _now;
+    _occupiedCards[reader] = card;
     // Capture the card's UID as the identity baseline so a later swap (a
     // different card seated without an intervening empty tick) is detected
-    // as a change rather than "still the same card present".
+    // as a change rather than "still the same card present". Routed through
+    // the card (not the raw platform) so it's serialized with any other
+    // transceive already in flight on this card.
     try {
-      _occupiedUid[reader] = await _platform.transceive(reader, _probeApdu) ?? '';
+      _occupiedUid[reader] = await card.transceive(_probeApdu) ?? '';
     } catch (_) {
       _occupiedUid[reader] = ''; // card doesn't answer the probe (e.g. Type B)
     }
     try {
       final driver = await identifyTag(card);
-      _occupiedDrivers[reader] = driver;
-      _tagsController?.add(driver);
-      _taggedTagsController?.add(ReaderTaggedDriver(reader, driver));
+      _occupiedDrivers[reader] = _HeldDriver(driver);
+      // ALWAYS emit on the one shared live pipeline. Each tags()/taggedTags()
+      // subscription that actually forwards this event to its consumer marks
+      // the held driver delivered (see taggedTags); if no subscription's
+      // filter matches (or nobody is listening), `delivered` stays false and
+      // the first later matching subscriber gets it via replay -- a filtered
+      // pipeline discarding the event can no longer strand the presentation.
+      _liveTaggedController.add(ReaderTaggedDriver(reader, driver));
     } catch (error, stackTrace) {
       // Connected but couldn't identify the card -- keep the reader marked
-      // occupied (a card IS physically seated); log and move on, same as
-      // AndroidNfcSource does for one bad discovery.
+      // occupied (a card IS physically seated) and keep the loop going, but
+      // surface the failure to tags()/taggedTags() consumers as a stream
+      // error (matching AndroidNfcSource, which addErrors on a discovery it
+      // cannot identify): the README error contract promises onError sees
+      // "a tag that connects but fails identification". Errors are not
+      // held/replayed -- with nobody listening, only the log remains.
       developer.log(
         'Failed to identify tag on reader "$reader": $error',
         name: 'nfc_hub.CcidSource',
         error: error,
         stackTrace: stackTrace,
       );
+      _taggedTagsController?.addError(error, stackTrace);
     }
     return true;
   }
@@ -366,10 +470,25 @@ class CcidSource implements TagSource {
   /// different card was swapped in (its UID changed) -- in both cases the
   /// next tick freshly connects and identifies whatever is now present,
   /// rather than leaving the previous card's driver/data in place.
+  ///
+  /// The recent-activity skip below narrows -- but does not eliminate --
+  /// the probe-mid-conversation risk (F3's residual): a single in-flight
+  /// frame that outlasts [pollInterval] since [CcidCard.lastActivity] can
+  /// still let a tick enqueue a probe that lands between two chained frames
+  /// of the app's command sequence (the per-card serialization only orders
+  /// it after the frame in flight, not after the whole sequence).
   Future<bool> _probeStillPresent(String reader) async {
+    final card = _occupiedCards[reader];
+    // Recent app traffic already proves the card is present -- and injecting
+    // a probe APDU mid-conversation can abort a chained command. Skip.
+    final last = card?.lastActivity;
+    if (last != null && _now().difference(last) < pollInterval) return true;
+
     final String? response;
     try {
-      response = await _platform.transceive(reader, _probeApdu);
+      response = card == null
+          ? await _platform.transceive(reader, _probeApdu)
+          : await card.transceive(_probeApdu);
     } catch (_) {
       // Nothing answers the probe -- the card was removed.
       await _markCardGone(reader);
@@ -392,6 +511,7 @@ class CcidSource implements TagSource {
   Future<void> _markCardGone(String reader) async {
     _status[reader] = _ReaderStatus.empty;
     _occupiedDrivers.remove(reader);
+    _occupiedCards.remove(reader);
     _occupiedUid.remove(reader);
     await _disconnectQuietly(reader);
   }
@@ -429,13 +549,13 @@ class CcidSource implements TagSource {
     // listener attaching mid-disconnect must never replay a driver for a card
     // that is already being torn down.
     _occupiedDrivers.clear();
+    _occupiedCards.clear();
     _occupiedUid.clear();
     for (final entry in _status.entries) {
       if (entry.value == _ReaderStatus.occupied) {
         await _disconnectQuietly(entry.key);
       }
     }
-    await _tagsController?.close();
     await _taggedTagsController?.close();
     await _statesController?.close();
   }

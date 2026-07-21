@@ -151,6 +151,24 @@ int? _indexOf(Uint8List haystack, List<int> needle) {
   return null;
 }
 
+/// True when [responseHex]'s status word could only have been produced by
+/// an ISO7816 command interpreter on the card: success (9000), data
+/// available (61xx/6Cxx), or card-level "understood but can't" errors
+/// (6A82 file not found, 6A86 wrong P1P2, 6D00 INS not supported, 6E00 CLA
+/// not supported). Reader-level failure SWs (63xx, 6Fxx) prove nothing --
+/// the ACR122U answers 6300 for a non-ISO-DEP card it couldn't talk to.
+bool _isIsoDepSw(String responseHex) {
+  if (responseHex.length < 4) return false;
+  final sw = responseHex.substring(responseHex.length - 4).toUpperCase();
+  return sw == '9000' ||
+      sw.startsWith('61') ||
+      sw.startsWith('6C') ||
+      sw == '6A82' ||
+      sw == '6A86' ||
+      sw == '6D00' ||
+      sw == '6E00';
+}
+
 Future<String?> _tryTransceive(CcidCard card, String capdu) async {
   try {
     return await card.transceive(capdu);
@@ -184,12 +202,6 @@ Future<TagDriver> _identifyByProbing(
     return Type2Tag(backend.type2(), atr: atr);
   }
 
-  final selectResponse = await _tryTransceive(card, '00A4040000');
-  log.add('SELECT -> ${selectResponse ?? 'no response'}');
-  if (selectResponse != null && selectResponse.length >= 4) {
-    return IsoDepTag(await backend.isoDep());
-  }
-
   try {
     final mifareTransport = await backend.mifareClassic();
     final family = mifareFamilyFromSak(mifareTransport.sak);
@@ -199,6 +211,12 @@ Future<TagDriver> _identifyByProbing(
     // pseudo-ATR was degenerate (a contactless card's iccPowerOn ATR can be),
     // is still a genuine MIFARE Classic and must be recognized. The PN532
     // poll that built this transport already read the real SAK.
+    //
+    // This runs BEFORE the SELECT probe below: SELECT can't disprove MIFARE
+    // Classic (a reader that can't talk ISO7816 to the card answers with a
+    // reader-level failure SW like 6300, which proves nothing either way),
+    // but a matching SAK here is authoritative, so there's no reason to
+    // risk the SELECT probe grabbing the card under the wrong family first.
     if (family == MifareFamily.classic1k ||
         family == MifareFamily.classic4k ||
         family == MifareFamily.mini) {
@@ -210,6 +228,12 @@ Future<TagDriver> _identifyByProbing(
         'is not a MIFARE Classic family');
   } catch (e) {
     log.add('MIFARE poll -> failed: $e');
+  }
+
+  final selectResponse = await _tryTransceive(card, '00A4040000');
+  log.add('SELECT -> ${selectResponse ?? 'no response'}');
+  if (selectResponse != null && _isIsoDepSw(selectResponse)) {
+    return IsoDepTag(await backend.isoDep());
   }
 
   final felica = FelicaTag(backend.nfcF(), atr: atr);

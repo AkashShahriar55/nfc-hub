@@ -87,9 +87,16 @@ class NfcHubReader {
   /// Future it is awaited before the next tag is delivered, so reads on one tag
   /// never overlap the next (important for the single-threaded CCID reader). A
   /// throwing/failing [onDiscovered] is isolated — it does not tear down the
-  /// session. [onError], if given, receives stream errors; if omitted, stream
-  /// errors are silently swallowed (the session stays alive), so supply
-  /// [onError] if you need to observe failures. Calling
+  /// session, and whatever it threw (e.g. a `TagLostException` when the tag
+  /// leaves the field mid-read) is reported to this session's [onError].
+  /// [onError], if given, also receives stream errors — this
+  /// includes per-tap failures (e.g. an unreadable/unrecognized tag, or a
+  /// tag that connects but fails identification), not just connection-level
+  /// errors: the session survives these and keeps delivering later taps. If
+  /// [onError] is omitted, all such errors are silently swallowed (the
+  /// session stays alive), so always supply [onError] and use it to show a
+  /// lightweight "couldn't read tag, try again" UI rather than leaving
+  /// failed taps unexplained. Calling
   /// startSession while a session is active first stops the previous one; the
   /// serialization chain is not reset, so the new session's first read still
   /// waits for any still-in-flight previous read (no overlap across a replace).
@@ -110,8 +117,19 @@ class NfcHubReader {
         _chain = _chain.then((_) async {
           try {
             await onDiscovered(tag);
-          } catch (_) {
-            // A throwing callback must not break the session or the chain.
+          } catch (error) {
+            // A throwing callback must not break the session or the chain --
+            // but the app must still hear about it (e.g. TagLostException
+            // mid-read), so report it to THIS session's onError. `onError`
+            // is the startSession parameter captured by this closure: if the
+            // session has since been replaced, an in-flight read still
+            // reports to the session it belonged to, which is correct.
+            // Guard the report itself: an onError that throws must not fail
+            // this chain entry, or every later onDiscovered would be
+            // silently skipped for the session's lifetime.
+            try {
+              onError?.call(error);
+            } catch (_) {}
           }
         });
       },

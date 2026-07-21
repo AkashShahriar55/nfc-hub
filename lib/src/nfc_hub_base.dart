@@ -31,6 +31,7 @@ class NfcHub {
   AndroidNfcManager? _androidNfcManager;
   AndroidNfcSource? _androidNfcSource;
   CcidSource? _ccidSource;
+  final Map<CcidSourceFilter?, Stream<TagDriver>> _tagStreams = {};
 
   AndroidNfcManager get _manager => _androidNfcManager ??= AndroidNfcManager();
 
@@ -66,8 +67,12 @@ class NfcHub {
   ///
   /// Starts whichever underlying source(s) the filter selects on first
   /// listen, and stops them once the last listener of this stream cancels.
+  ///
+  /// Returns the same stream instance for equal filter values, so multiple
+  /// listeners share one pipeline (one set of source subscriptions) instead
+  /// of creating parallel pipelines.
   Stream<TagDriver> tagStream({CcidSourceFilter? from}) {
-    return mergeTagStreams(
+    return _tagStreams[from] ??= mergeTagStreams(
       androidSource: _nfcSource,
       ccidSource: _readerSource,
       filter: from,
@@ -83,6 +88,17 @@ class NfcHub {
   /// the underlying source(s) (Android reader mode / the CCID poll loop)
   /// are stopped just like they are when a tag actually arrives, rather
   /// than being left running forever.
+  ///
+  /// Because this is backed by `.first`, the returned future also completes
+  /// with an error -- it does NOT keep waiting for a later, successful tap
+  /// -- if the very first event on the stream is itself an error: an
+  /// unreadable/unrecognized tap (e.g. [UnrecognizedTagException] from an
+  /// Android discovery whose tech list matches nothing known, or the
+  /// underlying identification failure for a tag that connects but can't be
+  /// identified). A caller that wants "keep prompting the user until a tag
+  /// is actually read" behavior -- tap-until-success, ignoring bad taps in
+  /// between -- should use [tagStream] (or `NfcHubReader.startSession`)
+  /// directly and handle `onError` itself, rather than [readTag].
   Future<TagDriver> readTag({CcidSourceFilter? from, Duration? timeout}) {
     final stream = tagStream(from: from);
     if (timeout == null) return stream.first;
@@ -143,11 +159,43 @@ class CcidCard {
 
   CcidCard(this.reader, {this.atr});
 
+  /// Clock used to stamp [lastActivity]. Overridable (by [CcidSource], right
+  /// after a successful connect) so tests can drive both the card's activity
+  /// timestamps and the source's poll-loop comparisons off one shared fake
+  /// clock instead of the card using real time while the source uses an
+  /// injected one. Not part of the app-facing API: apps must never set this.
+  @visibleForTesting
+  DateTime Function() now = DateTime.now;
+
+  /// Completion time of the most recent [transceive] (success OR failure).
+  /// Null until the first transceive completes. CcidSource uses this to skip
+  /// its liveness probe while the app is actively talking to the card.
+  DateTime? lastActivity;
+
+  // Serializes transceives per card: an APDU never starts until the
+  // previous one completes. Probing and multi-step driver flows share one
+  // card; without this, a poll-loop probe can land between two frames of a
+  // chained command (DESFire GetVersion, MIFARE load-key/auth) and abort it.
+  Future<void> _chain = Future<void>.value();
+
   /// Send APDU command [capdu]
   ///
-  /// Returns the response APDU
+  /// Returns the response APDU. Serialized: if another [transceive] on this
+  /// same card is still in flight, this one waits for it to complete (success
+  /// or failure) before its own APDU is sent.
   Future<String?> transceive(String capdu) {
-    return NfcHubPlatform.instance.transceive(reader, capdu);
+    final completer = Completer<String?>();
+    _chain = _chain.then((_) async {
+      try {
+        completer.complete(
+            await NfcHubPlatform.instance.transceive(reader, capdu));
+      } catch (e, st) {
+        completer.completeError(e, st);
+      } finally {
+        lastActivity = now();
+      }
+    });
+    return completer.future;
   }
 
   /// Disconnect from the card

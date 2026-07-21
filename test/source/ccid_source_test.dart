@@ -36,6 +36,13 @@ class _FakePlatform extends NfcHubPlatform {
   /// without an intervening empty tick. Defaults to '9000' for a seated card.
   final Map<String, String> cardUid = {};
 
+  /// Readers holding a card that connects but cannot be identified: connect()
+  /// succeeds with an ATR-less [CcidCard], and every transceive throws -- so
+  /// `identifyTag`'s probing chain deterministically ends in
+  /// [UnrecognizedTagException]. Requires `NfcHubPlatform.instance` to be set
+  /// to this fake, since the probes go through [CcidCard.transceive].
+  final Set<String> muteCards = {};
+
   final List<String> listReadersLog = [];
   final List<String> connectLog = [];
   final List<String> transceiveLog = [];
@@ -60,6 +67,7 @@ class _FakePlatform extends NfcHubPlatform {
   @override
   Future<CcidCard> connect(String reader) async {
     connectLog.add(reader);
+    if (muteCards.contains(reader)) return CcidCard(reader); // no ATR
     if (!cardsPresent.contains(reader)) {
       throw Exception('no card seated in $reader');
     }
@@ -116,7 +124,14 @@ void main() {
         final platform = _FakePlatform()
           ..readers = ['reader-1']
           ..cardsPresent.add('reader-1');
-        final source = CcidSource(platform);
+        // A fake clock that advances alongside async.elapse (see the
+        // "liveness probe is SKIPPED" test below for why this is needed:
+        // otherwise the activity-gated probe skip -- comparing against real
+        // wall-clock time, which barely moves under FakeAsync -- would skip
+        // the probe forever after the first connect and this test's removal
+        // would never be detected).
+        var fakeNow = DateTime(2026, 1, 1);
+        final source = CcidSource(platform, now: () => fakeNow);
         addTearDown(source.dispose);
 
         final drivers = <TagDriver>[];
@@ -126,18 +141,21 @@ void main() {
 
         // Tick 1: card seated -> connect succeeds -> emits, occupied.
         async.elapse(const Duration(milliseconds: 500));
+        fakeNow = fakeNow.add(const Duration(milliseconds: 500));
         expect(drivers, hasLength(1));
         expect(states.last, [const ExternalReaderState('reader-1', true)]);
 
         // Card is pulled: the next status probe throws.
         platform.cardsPresent.remove('reader-1');
         async.elapse(const Duration(milliseconds: 500));
+        fakeNow = fakeNow.add(const Duration(milliseconds: 500));
         expect(drivers, hasLength(1), reason: 'no re-emit for the removal');
         expect(states.last, [const ExternalReaderState('reader-1', false)]);
 
         // A new card is seated: connect succeeds again.
         platform.cardsPresent.add('reader-1');
         async.elapse(const Duration(milliseconds: 500));
+        fakeNow = fakeNow.add(const Duration(milliseconds: 500));
         expect(drivers, hasLength(2), reason: 'the re-insertion is a NEW tag');
         expect(drivers.last, isA<Type2Tag>());
         expect(states.last, [const ExternalReaderState('reader-1', true)]);
@@ -173,20 +191,27 @@ void main() {
           ..readers = ['reader-1']
           ..cardsPresent.add('reader-1')
           ..cardUid['reader-1'] = '04AABBCC9000'; // card A
-        final source = CcidSource(platform);
+        // Fake clock advanced alongside async.elapse -- see the "liveness
+        // probe is SKIPPED" test for why this is required for the probe to
+        // ever run again after the first connect.
+        var fakeNow = DateTime(2026, 1, 1);
+        final source = CcidSource(platform, now: () => fakeNow);
         addTearDown(source.dispose);
 
         final drivers = <TagDriver>[];
         source.tags().listen(drivers.add);
 
         async.elapse(const Duration(milliseconds: 500)); // card A detected
+        fakeNow = fakeNow.add(const Duration(milliseconds: 500));
         expect(drivers, hasLength(1));
 
         // Swap in a DIFFERENT card without an intervening empty tick: same
         // reader still has a card, but its Get-UID response changed.
         platform.cardUid['reader-1'] = '04DDEEFF9000'; // card B
         async.elapse(const Duration(milliseconds: 500)); // probe sees change
+        fakeNow = fakeNow.add(const Duration(milliseconds: 500));
         async.elapse(const Duration(milliseconds: 500)); // reconnect + identify
+        fakeNow = fakeNow.add(const Duration(milliseconds: 500));
 
         expect(drivers, hasLength(2),
             reason: 'the swapped-in card must be identified and emitted as a '
@@ -273,31 +298,39 @@ void main() {
         final platform = _FakePlatform()
           ..readers = ['reader-1']
           ..cardsPresent.add('reader-1');
-        final source = CcidSource(platform);
+        // Fake clock advanced alongside async.elapse -- see the "liveness
+        // probe is SKIPPED" test for why this is required for the probe to
+        // ever run again after the first connect.
+        var fakeNow = DateTime(2026, 1, 1);
+        final source = CcidSource(platform, now: () => fakeNow);
         addTearDown(source.dispose);
 
         source.tags().listen((_) {});
 
         // Tick 1: card seated -> connect succeeds, no disconnect yet.
         async.elapse(const Duration(milliseconds: 500));
+        fakeNow = fakeNow.add(const Duration(milliseconds: 500));
         expect(platform.connectLog, ['reader-1']);
         expect(platform.disconnectLog, isEmpty);
 
         // Card pulled: the next probe throws -> disconnect() called once.
         platform.cardsPresent.remove('reader-1');
         async.elapse(const Duration(milliseconds: 500));
+        fakeNow = fakeNow.add(const Duration(milliseconds: 500));
         expect(platform.disconnectLog, ['reader-1']);
 
         // Still empty: the reader keeps retrying connect() every tick (as
         // covered by the existing "connect() that throws" test), but that
         // must never trigger another disconnect.
         async.elapse(const Duration(milliseconds: 500));
+        fakeNow = fakeNow.add(const Duration(milliseconds: 500));
         expect(platform.disconnectLog, ['reader-1']);
 
         // Re-insertion: connect() succeeds again (2nd successful connect),
         // and no new disconnect happens while the new card is held.
         platform.cardsPresent.add('reader-1');
         async.elapse(const Duration(milliseconds: 500));
+        fakeNow = fakeNow.add(const Duration(milliseconds: 500));
         expect(platform.connectLog, ['reader-1', 'reader-1', 'reader-1'],
             reason: 'tick1 connect, tick3 failed retry, tick4 reconnect');
         expect(platform.disconnectLog, ['reader-1'],
@@ -359,7 +392,11 @@ void main() {
         final platform = _FakePlatform()
           ..readers = ['reader-1']
           ..cardsPresent.add('reader-1');
-        final source = CcidSource(platform);
+        // Fake clock advanced alongside async.elapse -- see the "liveness
+        // probe is SKIPPED" test for why this is required for the probe to
+        // ever run again after the first connect.
+        var fakeNow = DateTime(2026, 1, 1);
+        final source = CcidSource(platform, now: () => fakeNow);
         addTearDown(source.dispose);
 
         final drivers = <TagDriver>[];
@@ -367,6 +404,7 @@ void main() {
 
         // Tick 1: card seated and connected.
         async.elapse(const Duration(milliseconds: 500));
+        fakeNow = fakeNow.add(const Duration(milliseconds: 500));
         expect(drivers, hasLength(1));
 
         // Card pulled, and disconnect() itself throws.
@@ -376,6 +414,7 @@ void main() {
           () => async.elapse(const Duration(milliseconds: 500)),
           returnsNormally,
         );
+        fakeNow = fakeNow.add(const Duration(milliseconds: 500));
         expect(platform.disconnectLog, ['reader-1']);
 
         // The loop is still alive: the next tick still polls and a
@@ -383,6 +422,7 @@ void main() {
         platform.disconnectError = null;
         platform.cardsPresent.add('reader-1');
         async.elapse(const Duration(milliseconds: 500));
+        fakeNow = fakeNow.add(const Duration(milliseconds: 500));
         expect(drivers, hasLength(2));
       });
     });
@@ -474,8 +514,14 @@ void main() {
     });
 
     test(
-        'a late tags() listener does NOT re-deliver to a listener already '
-        'attached from the start (no double emit)', () {
+        'a late tags() listener does NOT get a card already delivered live '
+        'to a listener attached from the start (exactly-once, not '
+        'replay-to-every-listener)', () {
+      // Regression for the exactly-once contract: this card was delivered
+      // the moment it was identified (a tags() listener was already live),
+      // so a late second listener must see nothing -- the OLD behavior
+      // (replay to every NEW subscription regardless of prior delivery) is
+      // exactly the double-read bug this contract kills.
       FakeAsync().run((async) {
         final platform = _FakePlatform()
           ..readers = ['reader-1']
@@ -488,18 +534,203 @@ void main() {
         async.elapse(const Duration(milliseconds: 500));
         expect(firstDrivers, hasLength(1));
 
-        // A second, late listener joins after the card is already occupied.
+        // A second, late listener joins after the card is already occupied
+        // AND already delivered (live) to the first listener.
         final secondDrivers = <TagDriver>[];
         final secondSub = source.tags().listen(secondDrivers.add);
         async.elapse(const Duration(milliseconds: 500));
 
-        expect(secondDrivers, hasLength(1),
-            reason: 'the late listener gets the replay exactly once');
+        expect(secondDrivers, isEmpty,
+            reason: 'the card was already delivered live to the first '
+                'listener -- the late listener must not replay it');
         expect(firstDrivers, hasLength(1),
             reason:
                 'the listener already attached must not be re-delivered to');
         firstSub.cancel();
         secondSub.cancel();
+      });
+    });
+
+    test(
+        'a seated card is delivered exactly ONCE across resubscriptions: '
+        'a second listener (or a re-listen) does not replay it', () {
+      FakeAsync().run((async) {
+        final platform = _FakePlatform()
+          ..readers = ['reader-1']
+          ..cardsPresent.add('reader-1');
+        final source = CcidSource(platform);
+        addTearDown(source.dispose);
+
+        final first = <TagDriver>[];
+        final sub1 = source.tags().listen(first.add);
+        async.elapse(const Duration(milliseconds: 500));
+        expect(first, hasLength(1));
+
+        // Simulates a widget rebuild / session restart: cancel and re-listen.
+        sub1.cancel();
+        final second = <TagDriver>[];
+        source.tags().listen(second.add);
+        async.elapse(const Duration(milliseconds: 1500));
+        expect(second, isEmpty,
+            reason: 'the same presentation must not be re-delivered');
+      });
+    });
+
+    test(
+        'a driver identified while only readerStates is listened is replayed '
+        'to the FIRST tags() subscriber (and only that one)', () {
+      FakeAsync().run((async) {
+        final platform = _FakePlatform()
+          ..readers = ['reader-1']
+          ..cardsPresent.add('reader-1');
+        final source = CcidSource(platform);
+        addTearDown(source.dispose);
+
+        source.readerStates().listen((_) {}); // starts the loop, holds driver
+        async.elapse(const Duration(milliseconds: 500));
+
+        final a = <TagDriver>[];
+        final b = <TagDriver>[];
+        source.tags().listen(a.add);
+        source.tags().listen(b.add);
+        async.elapse(const Duration(milliseconds: 500));
+        expect(a.length + b.length, 1,
+            reason: 'held driver replays to exactly one listener');
+      });
+    });
+
+    test(
+        'a card that connects but fails identification surfaces the error '
+        "on the listener's onError, and the stream stays alive: a good "
+        'card on another reader still delivers', () {
+      // Regression (final review, Finding 2): the identify catch only
+      // developer.log'ed, so an unidentifiable seated card was invisible to
+      // the app -- contradicting the README error contract ("onError
+      // receives ... a tag that connects but fails identification").
+      FakeAsync().run((async) {
+        final platform = _FakePlatform()
+          ..readers = ['reader-mute']
+          ..muteCards.add('reader-mute');
+        NfcHubPlatform.instance = platform;
+        addTearDown(() => NfcHubPlatform.instance = null);
+        final source = CcidSource(platform);
+        addTearDown(source.dispose);
+
+        final drivers = <TagDriver>[];
+        final errors = <Object>[];
+        final taggedErrors = <Object>[];
+        source.tags().listen(drivers.add, onError: errors.add);
+        source.taggedTags().listen((_) {}, onError: taggedErrors.add);
+
+        async.elapse(const Duration(milliseconds: 500));
+        expect(errors, hasLength(1));
+        expect(errors.single, isA<UnrecognizedTagException>());
+        expect(taggedErrors, hasLength(1),
+            reason: 'taggedTags() consumers must receive the error too');
+        expect(drivers, isEmpty);
+
+        // The stream survived: a good card on another reader still delivers.
+        platform.readers = ['reader-mute', 'reader-good'];
+        platform.cardsPresent.add('reader-good');
+        async.elapse(const Duration(milliseconds: 500));
+        expect(drivers, hasLength(1));
+        expect(drivers.single, isA<Type2Tag>());
+      });
+    });
+
+    test(
+        'a reader-filtered taggedTags(reader: A) listener does NOT consume '
+        "another reader's card: reader B's card is held for a LATER "
+        'unfiltered subscriber', () {
+      // Regression (final review, Finding 1): the old design marked
+      // `delivered` the moment ANY listener existed, then filtered
+      // downstream (in mergeTagStreams) -- so a session filtered to reader
+      // A silently consumed and discarded reader B's card, permanently.
+      FakeAsync().run((async) {
+        final platform = _FakePlatform()
+          ..readers = ['reader-A', 'reader-B']
+          ..cardsPresent.add('reader-B');
+        final source = CcidSource(platform);
+        addTearDown(source.dispose);
+
+        final filtered = <ReaderTaggedDriver>[];
+        final filteredSub =
+            source.taggedTags(reader: 'reader-A').listen(filtered.add);
+        async.elapse(const Duration(milliseconds: 1500));
+        expect(filtered, isEmpty,
+            reason: "reader B's card must not reach a reader-A filter");
+
+        // A later unfiltered subscriber must still receive B's card -- the
+        // filtered pipeline never consumed it.
+        final all = <TagDriver>[];
+        final allSub = source.tags().listen(all.add);
+        async.elapse(const Duration(milliseconds: 500));
+        expect(all, hasLength(1),
+            reason: "reader B's card was never delivered to any matching "
+                'listener, so it must be replayed to the first unfiltered '
+                'subscriber');
+        filteredSub.cancel();
+        allSub.cancel();
+      });
+    });
+
+    test(
+        'a reader-filtered taggedTags(reader: A) listener that DOES receive '
+        "reader A's card consumes it: a later unfiltered subscriber does "
+        'not get it again', () {
+      FakeAsync().run((async) {
+        final platform = _FakePlatform()
+          ..readers = ['reader-A']
+          ..cardsPresent.add('reader-A');
+        final source = CcidSource(platform);
+        addTearDown(source.dispose);
+
+        final filtered = <ReaderTaggedDriver>[];
+        final filteredSub =
+            source.taggedTags(reader: 'reader-A').listen(filtered.add);
+        async.elapse(const Duration(milliseconds: 500));
+        expect(filtered, hasLength(1));
+        expect(filtered.single.reader, 'reader-A');
+
+        final all = <TagDriver>[];
+        final allSub = source.tags().listen(all.add);
+        async.elapse(const Duration(milliseconds: 500));
+        expect(all, isEmpty,
+            reason: 'the card already reached the matching filtered '
+                'listener -- it must not be replayed to a later subscriber');
+        filteredSub.cancel();
+        allSub.cancel();
+      });
+    });
+
+    test(
+        'replay to a late reader-filtered subscriber only hands over the '
+        "matching reader's card, leaving the other held for its own "
+        'consumer', () {
+      FakeAsync().run((async) {
+        final platform = _FakePlatform()
+          ..readers = ['reader-A', 'reader-B']
+          ..cardsPresent.addAll(['reader-A', 'reader-B']);
+        final source = CcidSource(platform);
+        addTearDown(source.dispose);
+
+        // Only the loop-driving readerStates listener exists at identify
+        // time -- both cards end up held and undelivered.
+        source.readerStates().listen((_) {});
+        async.elapse(const Duration(milliseconds: 500));
+
+        final filtered = <ReaderTaggedDriver>[];
+        source.taggedTags(reader: 'reader-A').listen(filtered.add);
+        async.flushMicrotasks();
+        expect(filtered, hasLength(1));
+        expect(filtered.single.reader, 'reader-A');
+
+        // Reader B's held card was NOT consumed by the reader-A replay scan.
+        final late = <ReaderTaggedDriver>[];
+        source.taggedTags().listen(late.add);
+        async.flushMicrotasks();
+        expect(late, hasLength(1));
+        expect(late.single.reader, 'reader-B');
       });
     });
 
@@ -551,18 +782,24 @@ void main() {
           ..readers = ['reader-1']
           ..cardsPresent.add('reader-1')
           ..disconnectHold = Completer<void>();
-        final source = CcidSource(platform);
+        // Fake clock advanced alongside async.elapse -- see the "liveness
+        // probe is SKIPPED" test for why this is required for the probe to
+        // ever run again after the first connect.
+        var fakeNow = DateTime(2026, 1, 1);
+        final source = CcidSource(platform, now: () => fakeNow);
         addTearDown(source.dispose);
 
         // Tick 1: card seated -> connect succeeds -> emits, occupied.
         source.tags().listen((_) {});
         async.elapse(const Duration(milliseconds: 500));
+        fakeNow = fakeNow.add(const Duration(milliseconds: 500));
         expect(platform.connectLog, ['reader-1']);
 
         // Card is pulled: the next probe throws, kicking off disconnect(),
         // which is held open by platform.disconnectHold.
         platform.cardsPresent.remove('reader-1');
         async.elapse(const Duration(milliseconds: 500));
+        fakeNow = fakeNow.add(const Duration(milliseconds: 500));
         expect(platform.disconnectLog, ['reader-1'],
             reason: 'disconnect() has been called but not yet resolved');
 
@@ -581,6 +818,64 @@ void main() {
         async.elapse(const Duration(milliseconds: 500));
         lateSub.cancel();
       });
+    });
+
+    test(
+        'the liveness probe is SKIPPED while the app is actively reading the '
+        'card (recent CcidCard.transceive traffic proves presence)', () {
+      FakeAsync().run((async) {
+        final platform = _FakePlatform()
+          ..readers = ['reader-1']
+          ..cardsPresent.add('reader-1');
+        NfcHubPlatform.instance = platform;
+        addTearDown(() => NfcHubPlatform.instance = null);
+
+        var fakeNow = DateTime(2026, 1, 1);
+        final source = CcidSource(platform, now: () => fakeNow);
+        addTearDown(source.dispose);
+
+        final drivers = <TagDriver>[];
+        source.tags().listen(drivers.add);
+        async.elapse(const Duration(milliseconds: 500));
+        fakeNow = fakeNow.add(const Duration(milliseconds: 500));
+        expect(drivers, hasLength(1));
+
+        // The identify path + UID baseline ran; note the probe count now.
+        final probesAfterConnect = platform.transceiveLog.length;
+
+        // Simulate the app reading the card continuously: a driver transceive
+        // completes just before each tick.
+        final card = (drivers.single as Type2Tag);
+        for (var i = 0; i < 4; i++) {
+          card.readUid(); // issues a transceive through the same CcidCard
+          async.flushMicrotasks();
+          async.elapse(const Duration(milliseconds: 500));
+          fakeNow = fakeNow.add(const Duration(milliseconds: 500));
+        }
+
+        // Probes issued by the POLL LOOP during those 4 ticks: zero. All
+        // transceives logged were the driver's own readUid calls.
+        final pollProbes = platform.transceiveLog.length -
+            probesAfterConnect -
+            4; // the 4 readUid calls
+        expect(pollProbes, 0);
+      });
+    });
+
+    test('CcidCard serializes concurrent transceives (no interleaving)',
+        () async {
+      final platform = _SlowPlatform();
+      NfcHubPlatform.instance = platform;
+      addTearDown(() => NfcHubPlatform.instance = null);
+
+      final card = CcidCard('reader-1');
+      final first = card.transceive('AA');
+      final second = card.transceive('BB');
+      platform.release('AA');
+      platform.release('BB');
+      await Future.wait([first, second]);
+      // BB must not have STARTED until AA completed.
+      expect(platform.order, ['start:AA', 'end:AA', 'start:BB', 'end:BB']);
     });
 
     // Real timing, not FakeAsync: Stream.multi's done delivery does not
@@ -644,5 +939,36 @@ class _SlowConnectFakePlatform extends _FakePlatform {
     callCount++;
     await hold.future;
     return super.listReaders();
+  }
+}
+
+/// A minimal [NfcHubPlatform] whose [transceive] blocks until [release] is
+/// called for that exact APDU -- used to prove [CcidCard.transceive]
+/// serializes concurrent calls rather than letting a second APDU start
+/// before the first completes.
+///
+/// [release] can race ahead of [transceive] (e.g. a test calls both
+/// [CcidCard.transceive]s -- which don't actually reach this platform until
+/// a later microtask, since [CcidCard] chains them through a `Future.then`
+/// -- and then calls [release] synchronously right after, before either
+/// gate exists yet). Both [release] and [transceive] use `putIfAbsent` on
+/// the same completer so whichever runs first "arms" the gate and whichever
+/// runs second (create-and-await, or complete) sees the already-armed one --
+/// order-independent, so a call to [release] before the matching APDU has
+/// even started never gets silently dropped.
+class _SlowPlatform extends NfcHubPlatform {
+  final order = <String>[];
+  final _gates = <String, Completer<void>>{};
+
+  void release(String capdu) =>
+      _gates.putIfAbsent(capdu, () => Completer<void>()).complete();
+
+  @override
+  Future<String?> transceive(String reader, String capdu) async {
+    order.add('start:$capdu');
+    final gate = _gates.putIfAbsent(capdu, () => Completer<void>());
+    await gate.future;
+    order.add('end:$capdu');
+    return '9000';
   }
 }

@@ -403,8 +403,8 @@ void main() {
           '${'D54B0101${hex.encode(atqb)}00'.toUpperCase()}9000';
 
       final fake = _FakeCcidPlatform({
-        // Every earlier probe (Get UID, Read CC, SELECT, MIFARE's PN532
-        // Type A poll, FeliCa's Polling) is left unmapped -- the fake
+        // Every earlier probe (Get UID, Read CC, MIFARE's PN532 Type A
+        // poll, SELECT, FeliCa's Polling) is left unmapped -- the fake
         // throws for each and detection's own try/catch (or
         // _tryTransceive) treats that as "no match", same pattern as
         // detection_test.dart's Type B regression test -- so identifyTag()
@@ -429,17 +429,20 @@ void main() {
       expect(response, equals('AABB9000'));
 
       // Guards the wire format end to end: every earlier probe (Get UID,
-      // Read CC, SELECT, MIFARE's Type A poll, FeliCa's Polling) runs and
+      // Read CC, MIFARE's Type A poll, SELECT, FeliCa's Polling) runs and
       // fails first -- proving Type B really is the last-resort fallback
       // -- and only then does the last-resort poll use brTy=0x03 (Type B),
-      // not 0x00 (Type A).
+      // not 0x00 (Type A). The MIFARE poll (Task 8) now runs BEFORE SELECT
+      // and is retried once (_pollTypeAResilient) before the MIFARE block
+      // gives up, hence the escape command appearing twice in a row.
       expect(
         fake.requestedCapdus,
         containsAllInOrder([
           'FFCA000000', // Get UID probe
           'FFB0000304', // Read CC probe
+          'FF00000004D44A0100', // MIFARE's Type A poll, attempt 1
+          'FF00000004D44A0100', // MIFARE's Type A poll, attempt 2 (retry)
           '00A4040000', // SELECT probe
-          'FF00000004D44A0100', // MIFARE's Type A poll
           'FF00000009D440010600FFFF0000', // FeliCa Polling (pmm)
           'FF00000004D44A0103', // Type B poll (brTy=0x03)
           '00B0000000', // post-construction APDU passthrough
@@ -570,12 +573,22 @@ void main() {
       expect(info.atr, equals(atr));
     });
 
-    test('IsoDepTag: readTagInfo().atr matches the card ATR via '
-        'transport.historicalBytes (pre-existing path, unaffected by Task '
-        '8 -- covered here so all five driver families are asserted '
-        'together)', () async {
-      final atr = Uint8List.fromList(
-          [0x3B, 0x8A, 0x80, 0x01, 0x50, 0x00, 0x00, 0x00, 0x00, 0x00]);
+    test(
+        'IsoDepTag: readTagInfo().atr matches the ATR-derived historical '
+        'bytes via transport.historicalBytes (the forwarding path is '
+        'pre-existing, but the byte-slicing is Task 8: historicalBytes now '
+        "parses the ATR's historical-byte region via "
+        'historicalBytesFromAtr() instead of returning the whole ATR -- so '
+        'this fixture, unlike the pre-Task-8 one, is a well-formed '
+        'ISO7816-3 ATR that genuinely carries a trailing TCK: T0=0x83 '
+        'declares 3 historical bytes; TD1=0x01 declares protocol T=1 (not '
+        'T=0) with no further interface bytes -- and ISO7816-3 requires TCK '
+        'whenever a protocol other than T=0 is indicated, so the trailing '
+        'byte below really is TCK, matching what historicalBytesFromAtr '
+        'assumes (see its doc comment). Followed by the 3 historical bytes '
+        'and TCK = XOR(T0, TD1, historical bytes) = 0x41)', () async {
+      final atr =
+          Uint8List.fromList([0x3B, 0x83, 0x01, 0x80, 0x4F, 0x0C, 0x41]);
       final card = CcidCard('fake-reader', atr: atr);
 
       NfcHubPlatform.instance = _FakeCcidPlatform({
@@ -586,7 +599,7 @@ void main() {
 
       expect(driver, isA<IsoDepTag>());
       final info = await (driver as IsoDepTag).readTagInfo();
-      expect(info.atr, equals(atr));
+      expect(info.atr, equals(Uint8List.fromList([0x80, 0x4F, 0x0C])));
     });
   });
 }

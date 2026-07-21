@@ -27,6 +27,36 @@ class _FakePlatform extends NfcHubPlatform {
   }
 }
 
+/// Fails the PN532 `InListPassiveTarget` escape command the first time it's
+/// sent, then succeeds on every subsequent attempt. Used to prove the poll
+/// is retried once instead of immediately degrading to an empty identity on
+/// a single transient failure.
+class _FlakyPollPlatform extends NfcHubPlatform {
+  int pollAttempts = 0;
+
+  @override
+  Future<List<String>> listReaders() async => ['fake'];
+
+  @override
+  Future<CcidCard> connect(String reader) async => CcidCard(reader);
+
+  @override
+  Future<void> disconnect(String reader) async {}
+
+  @override
+  Future<String?> transceive(String reader, String capdu) async {
+    if (capdu.toUpperCase() == 'FF00000004D44A0100') {
+      pollAttempts++;
+      // First attempt: instruction not supported -- a transient/glitchy
+      // response, not a genuine "no target" (NbTg=00) answer.
+      if (pollAttempts == 1) return '6D00';
+      // Retry: ATQA 0004, SAK 08 (Classic 1K), UID 04AABBCC.
+      return 'D54B01010004080404AABBCC9000';
+    }
+    return null;
+  }
+}
+
 void main() {
   late _FakePlatform platform;
 
@@ -261,12 +291,37 @@ void main() {
       expect(r, Uint8List.fromList([0x6A, 0x82]));
     });
 
-    test('historicalBytes is the card ATR', () async {
+    test(
+        'historicalBytes parses the historical bytes out of the ATR (T0 low '
+        "nibble = count K), not the whole ATR (regression: the old code "
+        'returned card.atr verbatim, including the 4-byte PC/SC header and '
+        'trailing TCK, which is not what IsoDepTransport.historicalBytes '
+        'promises callers)', () async {
       install({'FF00000004D44A0100': 'D54B01010004200404AABBCC9000'});
-      final atr = Uint8List.fromList([0x3B, 0x8F, 0x80]);
+      // NTAG-style ATR: 3B 8F 80 01 | 80 4F 0C A0 00 00 03 06 03 00 03 00 00
+      // 00 00 | 68. T0=0x8F -> K=15 historical bytes; TCK is the final byte.
+      final atr = Uint8List.fromList([
+        0x3B, 0x8F, 0x80, 0x01,
+        0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0x00, 0x03,
+        0x00, 0x00, 0x00, 0x00,
+        0x68,
+      ]);
       final t = await CcidTransportBackend(CcidCard('fake', atr: atr)).isoDep();
 
-      expect(t.historicalBytes, atr);
+      expect(
+        t.historicalBytes,
+        Uint8List.fromList([
+          0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0x00, 0x03,
+          0x00, 0x00, 0x00, 0x00,
+        ]),
+      );
+    });
+
+    test('historicalBytes is null when the card has no ATR', () async {
+      install({'FF00000004D44A0100': 'D54B01010004200404AABBCC9000'});
+      final t = await CcidTransportBackend(CcidCard('fake')).isoDep();
+
+      expect(t.historicalBytes, isNull);
     });
 
     test(
@@ -312,6 +367,80 @@ void main() {
 
       expect(t!.pupi, Uint8List.fromList([0x11, 0x22, 0x33, 0x44]));
       expect(t.atqb.length, 12);
+    });
+  });
+
+  group('pollTypeA resilience', () {
+    test(
+        'a single failed InListPassiveTarget escape is retried once before '
+        'mifareClassic() degrades to an empty identity', () async {
+      final flaky = _FlakyPollPlatform();
+      NfcHubPlatform.instance = flaky;
+
+      final t = await CcidTransportBackend(CcidCard('fake')).mifareClassic();
+
+      expect(flaky.pollAttempts, 2);
+      expect(t.sak, 0x08);
+      expect(t.atqa, Uint8List.fromList([0x00, 0x04]));
+      expect(t.uid, Uint8List.fromList([0x04, 0xAA, 0xBB, 0xCC]));
+    });
+
+    test(
+        'a single failed InListPassiveTarget escape is retried once before '
+        "isoDep() degrades to an empty UID", () async {
+      final flaky = _FlakyPollPlatform();
+      NfcHubPlatform.instance = flaky;
+
+      final t = await CcidTransportBackend(CcidCard('fake')).isoDep();
+
+      expect(flaky.pollAttempts, 2);
+      expect(await t.uid, Uint8List.fromList([0x04, 0xAA, 0xBB, 0xCC]));
+    });
+  });
+
+  group('historicalBytesFromAtr', () {
+    test('parses the ATR (T0 nibble), not the whole ATR', () {
+      // NTAG-style ATR: 3B 8F 80 01 | 80 4F 0C A0 00 00 03 06 03 00 03 00 00
+      // 00 00 | 68. T0=0x8F -> K=15 historical bytes; TCK is the final byte.
+      final atr = Uint8List.fromList([
+        0x3B, 0x8F, 0x80, 0x01,
+        0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0x00, 0x03,
+        0x00, 0x00, 0x00, 0x00,
+        0x68,
+      ]);
+      expect(
+        historicalBytesFromAtr(atr),
+        Uint8List.fromList([
+          0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0x00, 0x03,
+          0x00, 0x00, 0x00, 0x00,
+        ]),
+      );
+    });
+
+    test('is null for a null ATR', () {
+      expect(historicalBytesFromAtr(null), isNull);
+    });
+
+    test('is null for an ATR too short to hold historical bytes at all', () {
+      expect(historicalBytesFromAtr(Uint8List.fromList([0x3B, 0x80])), isNull);
+    });
+
+    test('is null when T0 declares zero historical bytes (K=0)', () {
+      expect(
+        historicalBytesFromAtr(Uint8List.fromList([0x3B, 0x80, 0x00])),
+        isNull,
+      );
+    });
+
+    test(
+        'is null when the ATR is too short to hold K historical bytes plus '
+        'the trailing TCK', () {
+      // T0=0x83 -> K=3, but only 2 bytes follow T0 (not 3 + 1 TCK).
+      expect(
+        historicalBytesFromAtr(
+            Uint8List.fromList([0x3B, 0x83, 0xAA, 0xBB])),
+        isNull,
+      );
     });
   });
 }

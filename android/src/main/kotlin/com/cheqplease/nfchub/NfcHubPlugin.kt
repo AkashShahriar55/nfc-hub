@@ -41,6 +41,12 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     // reader's Ccid, incl. its CCID sequence counter, is only ever touched by
     // one thread), and post result.success/error back to the main thread.
     private val ccidExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+
+    // Built-in-NFC tag I/O (connect/transceive/auth/readBlock) is blocking RF
+    // I/O, exactly like the CCID USB path -- run it on its own serial executor
+    // so it neither janks the main thread nor queues behind slow USB work.
+    private val nfcExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+
     private val mainHandler = Handler(Looper.getMainLooper())
 
     // --- Built-in (reader-mode) NFC state ---
@@ -64,6 +70,16 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     private val nfcStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context, intent: Intent) {
             if (intent.action == NfcAdapter.ACTION_ADAPTER_STATE_CHANGED) {
+                val adapterState = intent.getIntExtra(
+                    NfcAdapter.EXTRA_ADAPTER_STATE, NfcAdapter.STATE_OFF
+                )
+                // The app asked for reader mode while NFC was off (or the user toggled it
+                // off and on): enableReaderMode was a no-op then, so re-apply it the
+                // moment the adapter comes up -- otherwise built-in NFC stays dead until
+                // the app restarts its session.
+                if (adapterState == NfcAdapter.STATE_ON && nfcReaderModeRequested) {
+                    nfcController.startReaderMode()
+                }
                 val map = HashMap<String, Any?>()
                 map["type"] = "nfcStateChanged"
                 map["state"] = nfcController.nfcState()
@@ -111,9 +127,35 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                                     }
                                 }
                             }
+                        } ?: run {
+                            // Permission granted but device is missing from intent.
+                            // Look up the reader by name and complete its pending result
+                            // so it doesn't hang the poll loop.
+                            val grantedName = intent.getStringExtra("name")
+                            val reader = grantedName?.let { readers[it] }
+                            val pending = reader?.result
+                            if (reader != null && pending != null) {
+                                readers[reader.name] = reader.copy(result = null)
+                                pending.error(
+                                    "CCID_READER_CONNECT_ERROR",
+                                    "USB device missing from permission response",
+                                    null
+                                )
+                            }
                         }
                     } else {
                         Log.d(TAG, "permission denied for device $device")
+                        val deniedName = intent.getStringExtra("name")
+                        val reader = deniedName?.let { readers[it] }
+                        val pending = reader?.result
+                        if (reader != null && pending != null) {
+                            readers[reader.name] = reader.copy(result = null)
+                            pending.error(
+                                "CCID_PERMISSION_DENIED",
+                                "USB permission denied for reader ${reader.name}",
+                                null
+                            )
+                        }
                     }
                 }
             }
@@ -121,6 +163,15 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 synchronized(this) {
                     val device: UsbDevice? = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
                     device?.let { detachedDevice ->
+                        readers.values
+                            .filter { it.deviceName == detachedDevice.deviceName }
+                            .forEach { r ->
+                                r.result?.error(
+                                    "CCID_READER_DETACHED",
+                                    "Reader ${r.name} detached while a request was pending",
+                                    null
+                                )
+                            }
                         readers.entries.removeIf { (_, reader) ->
                             reader.deviceName == detachedDevice.deviceName
                         }
@@ -243,10 +294,17 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 val handle = call.argument<Int>("handle")!!
                 val tech = call.argument<String>("tech")!!
                 val data = call.argument<ByteArray>("data")!!
-                try {
-                    result.success(nfcController.transceive(handle, tech, data))
-                } catch (e: TagGoneException) {
-                    result.error("TAG_LOST", e.message, null)
+                nfcExecutor.execute {
+                    try {
+                        val resp = nfcController.transceive(handle, tech, data)
+                        mainHandler.post { result.success(resp) }
+                    } catch (e: TagGoneException) {
+                        mainHandler.post { result.error("TAG_LOST", e.message, null) }
+                    } catch (e: Throwable) {
+                        // EVERY path must complete `result` (see the CCID transceive
+                        // comment above) -- an orphaned Result hangs the Dart await.
+                        mainHandler.post { result.error("NFC_IO_ERROR", e.message, null) }
+                    }
                 }
             }
 
@@ -255,25 +313,36 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 val sector = call.argument<Int>("sector")!!
                 val keyA = call.argument<Boolean>("keyA")!!
                 val key = call.argument<ByteArray>("key")!!
-                try {
-                    val ok = nfcController.mifareAuthenticate(handle, sector, keyA, key)
-                    if (ok) {
-                        result.success(null)
-                    } else {
-                        result.error("MIFARE_AUTH_FAILED", "MIFARE sector authentication rejected", null)
+                nfcExecutor.execute {
+                    try {
+                        val ok = nfcController.mifareAuthenticate(handle, sector, keyA, key)
+                        mainHandler.post {
+                            if (ok) result.success(null)
+                            else result.error(
+                                "MIFARE_AUTH_FAILED",
+                                "MIFARE sector authentication rejected", null
+                            )
+                        }
+                    } catch (e: TagGoneException) {
+                        mainHandler.post { result.error("TAG_LOST", e.message, null) }
+                    } catch (e: Throwable) {
+                        mainHandler.post { result.error("NFC_IO_ERROR", e.message, null) }
                     }
-                } catch (e: TagGoneException) {
-                    result.error("TAG_LOST", e.message, null)
                 }
             }
 
             "nfcMifareReadBlock" -> {
                 val handle = call.argument<Int>("handle")!!
                 val block = call.argument<Int>("block")!!
-                try {
-                    result.success(nfcController.mifareReadBlock(handle, block))
-                } catch (e: TagGoneException) {
-                    result.error("TAG_LOST", e.message, null)
+                nfcExecutor.execute {
+                    try {
+                        val resp = nfcController.mifareReadBlock(handle, block)
+                        mainHandler.post { result.success(resp) }
+                    } catch (e: TagGoneException) {
+                        mainHandler.post { result.error("TAG_LOST", e.message, null) }
+                    } catch (e: Throwable) {
+                        mainHandler.post { result.error("NFC_IO_ERROR", e.message, null) }
+                    }
                 }
             }
 
@@ -297,6 +366,7 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         channel.setMethodCallHandler(null)
         ccidExecutor.shutdown()
+        nfcExecutor.shutdown()
     }
 
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
@@ -398,6 +468,17 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         val reader = readers[name]
         if (reader == null) {
             result.error("CCID_READER_NOT_FOUND", "Reader not found", null)
+            return
+        }
+        if (reader.result != null) {
+            // A permission request is already in flight for this reader; completing
+            // a second one would orphan the first (a Result that never completes
+            // hangs the Dart-side await forever -- see CcidSource's poll loop).
+            result.error(
+                "CCID_PERMISSION_PENDING",
+                "A USB permission request is already pending for $name",
+                null
+            )
             return
         }
         val device =

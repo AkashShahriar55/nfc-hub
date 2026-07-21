@@ -48,6 +48,50 @@ class _FakeNfcHub extends NfcHub {
   }
 }
 
+/// A dedicated fake for the session-restart contract: mirrors, at the
+/// facade+fake level, the two production contracts a restart must not
+/// violate --
+///  - Task 7: `NfcHub.tagStream()` returns the *same* broadcast stream
+///    instance across calls (here: a single `_controller` field, always
+///    returned), so a restart re-listens on the same pipeline rather than
+///    spinning up a parallel one.
+///  - Task 5: the underlying source delivers a given physical presentation
+///    exactly once -- a fresh listener (0->1 transition, as happens when a
+///    restart cancels the old subscription and attaches a new one) must NOT
+///    re-emit a tag that's already been delivered while still seated.
+///
+/// [tap] simulates a physical tap (or an already-seated card becoming
+/// visible to a freshly-attached listener): it records the tag as "seated"
+/// and delivers it once, exactly like the real poll loop would on first
+/// sighting -- but, per Task 5, never again for that same seating.
+class _SeatedCardHub extends NfcHub {
+  TagDriver? _seatedTag;
+  bool _delivered = false;
+
+  late final StreamController<TagDriver> _controller =
+      StreamController<TagDriver>.broadcast(onListen: () {
+    // A fresh listener attaching (e.g. after a session restart) is exactly
+    // when a real source's poll loop would re-examine a still-seated card.
+    // The exactly-once contract (Task 5) says: only deliver if this seating
+    // hasn't been delivered yet.
+    if (_seatedTag != null && !_delivered) {
+      _delivered = true;
+      _controller.add(_seatedTag!);
+    }
+  });
+
+  @override
+  Stream<TagDriver> tagStream({CcidSourceFilter? from}) => _controller.stream;
+
+  /// Simulates a tap landing while a session may or may not already be
+  /// listening.
+  void tap(TagDriver tag) {
+    _seatedTag = tag;
+    _delivered = _controller.hasListener;
+    if (_controller.hasListener) _controller.add(tag);
+  }
+}
+
 void main() {
   test('NfcSource.builtIn() maps to CcidSourceFilter.builtInNfc()', () {
     expect(const NfcSource.builtIn().toFilter(),
@@ -200,6 +244,39 @@ void main() {
     expect(events, ['start:A', 'end:A', 'start:B', 'end:B']);
   });
 
+  test(
+      'an onDiscovered that throws (e.g. TagLostException mid-read) reports '
+      'the error to onError, and the session still delivers the next tag',
+      () async {
+    // Regression (final review, Finding 3): the serialization chain's catch
+    // swallowed everything onDiscovered threw -- including TagLostException
+    // when the tag left the field mid-read -- despite the documented promise
+    // that onError sees per-tap failures.
+    final hub = _FakeNfcHub();
+    final reader = NfcHubReader.forTesting(hub);
+    final errors = <Object>[];
+    final seen = <String>[];
+
+    reader.startSession(
+      onDiscovered: (tag) async {
+        final name = (tag as _FakeTag).name;
+        if (name == 'A') {
+          throw const TagLostException('tag left the field mid-read');
+        }
+        seen.add(name);
+      },
+      onError: errors.add,
+    );
+    hub.tagController.add(_FakeTag('A'));
+    hub.tagController.add(_FakeTag('B'));
+    await pumpEventQueue();
+
+    expect(errors, hasLength(1));
+    expect(errors.single, isA<TagLostException>());
+    expect(seen, ['B'],
+        reason: 'the session must survive the throwing callback');
+  });
+
   test('a throwing onDiscovered does not stop later deliveries', () async {
     final hub = _FakeNfcHub();
     final reader = NfcHubReader.forTesting(hub);
@@ -231,6 +308,58 @@ void main() {
 
     expect(errors, hasLength(1));
     expect(errors.first, isA<StateError>());
+  });
+
+  test(
+      'startSession forwards a per-tap UnrecognizedTagException to onError, '
+      'and the session keeps delivering afterwards', () async {
+    final hub = _FakeNfcHub();
+    final reader = NfcHubReader.forTesting(hub);
+    final errors = <Object>[];
+    final seen = <String>[];
+
+    reader.startSession(
+      onDiscovered: (tag) => seen.add((tag as _FakeTag).name),
+      onError: errors.add,
+    );
+    hub.tagController
+        .addError(const UnrecognizedTagException('unsupported tech'));
+    await pumpEventQueue();
+
+    expect(errors, hasLength(1));
+    expect(errors.single, isA<UnrecognizedTagException>());
+
+    // A per-tap error (Task 6) does not tear the session down -- a later,
+    // successful tap must still be delivered.
+    hub.tagController.add(_FakeTag('A'));
+    await pumpEventQueue();
+    expect(seen, ['A']);
+  });
+
+  test(
+      'restarting a session over a still-seated card does not re-deliver it',
+      () async {
+    // Operates at the facade+dedicated-fake level (see _SeatedCardHub doc):
+    // NfcHubReader.forTesting wraps whatever fake NfcHub it's given, so this
+    // cannot exercise the real CcidSource/AndroidSource state machine --
+    // that lives in the ccid_source/android_source tests. This test pins
+    // that the facade itself introduces no double-delivery across a
+    // startSession replace, given a fake that mirrors the Task 5 (exactly
+    // once) + Task 7 (shared stream) contracts those sources provide.
+    final hub = _SeatedCardHub();
+    final reader = NfcHubReader.forTesting(hub);
+    final seen = <String>[];
+
+    reader.startSession(onDiscovered: (tag) => seen.add((tag as _FakeTag).name));
+    hub.tap(_FakeTag('A'));
+    await pumpEventQueue();
+    expect(seen, ['A']);
+
+    // Restart over the still-seated card -- no new tap occurs.
+    reader.startSession(onDiscovered: (tag) => seen.add((tag as _FakeTag).name));
+    await pumpEventQueue();
+
+    expect(seen, ['A']);
   });
 
   test('from: narrows the underlying tagStream to that source', () {
