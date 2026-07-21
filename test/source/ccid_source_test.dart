@@ -506,8 +506,14 @@ void main() {
     });
 
     test(
-        'a late tags() listener does NOT re-deliver to a listener already '
-        'attached from the start (no double emit)', () {
+        'a late tags() listener does NOT get a card already delivered live '
+        'to a listener attached from the start (exactly-once, not '
+        'replay-to-every-listener)', () {
+      // Regression for the exactly-once contract: this card was delivered
+      // the moment it was identified (a tags() listener was already live),
+      // so a late second listener must see nothing -- the OLD behavior
+      // (replay to every NEW subscription regardless of prior delivery) is
+      // exactly the double-read bug this contract kills.
       FakeAsync().run((async) {
         final platform = _FakePlatform()
           ..readers = ['reader-1']
@@ -520,18 +526,68 @@ void main() {
         async.elapse(const Duration(milliseconds: 500));
         expect(firstDrivers, hasLength(1));
 
-        // A second, late listener joins after the card is already occupied.
+        // A second, late listener joins after the card is already occupied
+        // AND already delivered (live) to the first listener.
         final secondDrivers = <TagDriver>[];
         final secondSub = source.tags().listen(secondDrivers.add);
         async.elapse(const Duration(milliseconds: 500));
 
-        expect(secondDrivers, hasLength(1),
-            reason: 'the late listener gets the replay exactly once');
+        expect(secondDrivers, isEmpty,
+            reason: 'the card was already delivered live to the first '
+                'listener -- the late listener must not replay it');
         expect(firstDrivers, hasLength(1),
             reason:
                 'the listener already attached must not be re-delivered to');
         firstSub.cancel();
         secondSub.cancel();
+      });
+    });
+
+    test(
+        'a seated card is delivered exactly ONCE across resubscriptions: '
+        'a second listener (or a re-listen) does not replay it', () {
+      FakeAsync().run((async) {
+        final platform = _FakePlatform()
+          ..readers = ['reader-1']
+          ..cardsPresent.add('reader-1');
+        final source = CcidSource(platform);
+        addTearDown(source.dispose);
+
+        final first = <TagDriver>[];
+        final sub1 = source.tags().listen(first.add);
+        async.elapse(const Duration(milliseconds: 500));
+        expect(first, hasLength(1));
+
+        // Simulates a widget rebuild / session restart: cancel and re-listen.
+        sub1.cancel();
+        final second = <TagDriver>[];
+        source.tags().listen(second.add);
+        async.elapse(const Duration(milliseconds: 1500));
+        expect(second, isEmpty,
+            reason: 'the same presentation must not be re-delivered');
+      });
+    });
+
+    test(
+        'a driver identified while only readerStates is listened is replayed '
+        'to the FIRST tags() subscriber (and only that one)', () {
+      FakeAsync().run((async) {
+        final platform = _FakePlatform()
+          ..readers = ['reader-1']
+          ..cardsPresent.add('reader-1');
+        final source = CcidSource(platform);
+        addTearDown(source.dispose);
+
+        source.readerStates().listen((_) {}); // starts the loop, holds driver
+        async.elapse(const Duration(milliseconds: 500));
+
+        final a = <TagDriver>[];
+        final b = <TagDriver>[];
+        source.tags().listen(a.add);
+        source.tags().listen(b.add);
+        async.elapse(const Duration(milliseconds: 500));
+        expect(a.length + b.length, 1,
+            reason: 'held driver replays to exactly one listener');
       });
     });
 
