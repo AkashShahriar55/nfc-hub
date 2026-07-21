@@ -41,6 +41,12 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     // reader's Ccid, incl. its CCID sequence counter, is only ever touched by
     // one thread), and post result.success/error back to the main thread.
     private val ccidExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+
+    // Built-in-NFC tag I/O (connect/transceive/auth/readBlock) is blocking RF
+    // I/O, exactly like the CCID USB path -- run it on its own serial executor
+    // so it neither janks the main thread nor queues behind slow USB work.
+    private val nfcExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+
     private val mainHandler = Handler(Looper.getMainLooper())
 
     // --- Built-in (reader-mode) NFC state ---
@@ -278,10 +284,17 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 val handle = call.argument<Int>("handle")!!
                 val tech = call.argument<String>("tech")!!
                 val data = call.argument<ByteArray>("data")!!
-                try {
-                    result.success(nfcController.transceive(handle, tech, data))
-                } catch (e: TagGoneException) {
-                    result.error("TAG_LOST", e.message, null)
+                nfcExecutor.execute {
+                    try {
+                        val resp = nfcController.transceive(handle, tech, data)
+                        mainHandler.post { result.success(resp) }
+                    } catch (e: TagGoneException) {
+                        mainHandler.post { result.error("TAG_LOST", e.message, null) }
+                    } catch (e: Throwable) {
+                        // EVERY path must complete `result` (see the CCID transceive
+                        // comment above) -- an orphaned Result hangs the Dart await.
+                        mainHandler.post { result.error("NFC_IO_ERROR", e.message, null) }
+                    }
                 }
             }
 
@@ -290,25 +303,36 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 val sector = call.argument<Int>("sector")!!
                 val keyA = call.argument<Boolean>("keyA")!!
                 val key = call.argument<ByteArray>("key")!!
-                try {
-                    val ok = nfcController.mifareAuthenticate(handle, sector, keyA, key)
-                    if (ok) {
-                        result.success(null)
-                    } else {
-                        result.error("MIFARE_AUTH_FAILED", "MIFARE sector authentication rejected", null)
+                nfcExecutor.execute {
+                    try {
+                        val ok = nfcController.mifareAuthenticate(handle, sector, keyA, key)
+                        mainHandler.post {
+                            if (ok) result.success(null)
+                            else result.error(
+                                "MIFARE_AUTH_FAILED",
+                                "MIFARE sector authentication rejected", null
+                            )
+                        }
+                    } catch (e: TagGoneException) {
+                        mainHandler.post { result.error("TAG_LOST", e.message, null) }
+                    } catch (e: Throwable) {
+                        mainHandler.post { result.error("NFC_IO_ERROR", e.message, null) }
                     }
-                } catch (e: TagGoneException) {
-                    result.error("TAG_LOST", e.message, null)
                 }
             }
 
             "nfcMifareReadBlock" -> {
                 val handle = call.argument<Int>("handle")!!
                 val block = call.argument<Int>("block")!!
-                try {
-                    result.success(nfcController.mifareReadBlock(handle, block))
-                } catch (e: TagGoneException) {
-                    result.error("TAG_LOST", e.message, null)
+                nfcExecutor.execute {
+                    try {
+                        val resp = nfcController.mifareReadBlock(handle, block)
+                        mainHandler.post { result.success(resp) }
+                    } catch (e: TagGoneException) {
+                        mainHandler.post { result.error("TAG_LOST", e.message, null) }
+                    } catch (e: Throwable) {
+                        mainHandler.post { result.error("NFC_IO_ERROR", e.message, null) }
+                    }
                 }
             }
 
@@ -332,6 +356,7 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         channel.setMethodCallHandler(null)
         ccidExecutor.shutdown()
+        nfcExecutor.shutdown()
     }
 
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
