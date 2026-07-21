@@ -111,6 +111,21 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                                     }
                                 }
                             }
+                        } ?: run {
+                            // Permission granted but device is missing from intent.
+                            // Look up the reader by name and complete its pending result
+                            // so it doesn't hang the poll loop.
+                            val grantedName = intent.getStringExtra("name")
+                            val reader = grantedName?.let { readers[it] }
+                            val pending = reader?.result
+                            if (reader != null && pending != null) {
+                                readers[reader.name] = reader.copy(result = null)
+                                pending.error(
+                                    "CCID_READER_CONNECT_ERROR",
+                                    "USB device missing from permission response",
+                                    null
+                                )
+                            }
                         }
                     } else {
                         Log.d(TAG, "permission denied for device $device")
