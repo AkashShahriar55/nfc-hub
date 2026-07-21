@@ -580,10 +580,15 @@ void main() {
         "parses the ATR's historical-byte region via "
         'historicalBytesFromAtr() instead of returning the whole ATR -- so '
         'this fixture, unlike the pre-Task-8 one, is a well-formed '
-        'ISO7816-3 ATR: T0=0x83 declares 3 historical bytes, TD1=0x00 (T=0, '
-        'no further interface bytes), followed by those 3 historical bytes '
-        'and a trailing TCK)', () async {
-      final atr = Uint8List.fromList([0x3B, 0x83, 0x00, 0x80, 0x4F, 0x0C, 0x00]);
+        'ISO7816-3 ATR that genuinely carries a trailing TCK: T0=0x83 '
+        'declares 3 historical bytes; TD1=0x01 declares protocol T=1 (not '
+        'T=0) with no further interface bytes -- and ISO7816-3 requires TCK '
+        'whenever a protocol other than T=0 is indicated, so the trailing '
+        'byte below really is TCK, matching what historicalBytesFromAtr '
+        'assumes (see its doc comment). Followed by the 3 historical bytes '
+        'and TCK = XOR(T0, TD1, historical bytes) = 0x41)', () async {
+      final atr =
+          Uint8List.fromList([0x3B, 0x83, 0x01, 0x80, 0x4F, 0x0C, 0x41]);
       final card = CcidCard('fake-reader', atr: atr);
 
       NfcHubPlatform.instance = _FakeCcidPlatform({

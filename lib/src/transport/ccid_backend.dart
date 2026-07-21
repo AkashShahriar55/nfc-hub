@@ -77,6 +77,18 @@ Future<PassiveTargetTypeA?> _pollTypeAResilient(CcidCard card) async {
 /// The historical bytes of [atr], per ISO7816-3: T0's low nibble is the
 /// count K; they are the K bytes immediately before the trailing TCK.
 /// Null when [atr] is null, malformed, or carries none.
+///
+/// This assumes [atr] always carries a trailing TCK. That's guaranteed for
+/// the PC/SC Part 3 pseudo-ATRs a CCID contactless reader (e.g. the
+/// ACR122U) emits for a card -- their TD1 declares a protocol other than
+/// T=0 (T=1, per PC/SC Part 3's synchronous/contactless-card convention),
+/// and ISO7816-3 requires TCK whenever any protocol other than T=0 is
+/// indicated -- which is the only kind of ATR this plugin ever parses (see
+/// [CcidCard.atr]). It is NOT a general-purpose ISO7816-3 ATR parser: a
+/// real T=0-only smart card ATR has no TCK at all, and running this
+/// function on one would mis-slice the historical bytes by one byte
+/// (silently including/excluding the wrong trailing byte rather than
+/// throwing).
 Uint8List? historicalBytesFromAtr(Uint8List? atr) {
   if (atr == null || atr.length < 3) return null;
   final k = atr[1] & 0x0F;
