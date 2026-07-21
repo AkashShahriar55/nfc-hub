@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:developer' as developer;
 
+import 'package:flutter/services.dart';
+
 import '../nfc_hub_base.dart';
 import '../platform/platform_interface.dart';
 import '../tag/detection.dart';
@@ -85,13 +87,15 @@ const _probeApdu = 'FFCA000000';
 ///    identified via [identifyTag], and the resulting driver is emitted on
 ///    [tags]. A throw means still no card -- stays **empty**, nothing
 ///    emitted.
-///  - **occupied**: sends the harmless [_probeApdu] via
-///    [NfcHubPlatform.transceive] as a liveness check. Success means the
-///    same card is still seated -- nothing is re-emitted (a card that stays
-///    put emits exactly once). A throw means the card was removed -- the
-///    reader moves back to **empty**, [NfcHubPlatform.disconnect] releases
-///    the connection the emitted [TagDriver] was holding, and the next
-///    tick's empty-handling can pick up a re-insertion.
+///  - **occupied**: sends the harmless [_probeApdu] through the occupied
+///    reader's [CcidCard] (so it's serialized with, and skipped entirely
+///    during, any in-flight driver transceive -- see [_probeStillPresent])
+///    as a liveness check. Success means the same card is still seated --
+///    nothing is re-emitted (a card that stays put emits exactly once). A
+///    throw means the card was removed -- the reader moves back to
+///    **empty**, [NfcHubPlatform.disconnect] releases the connection the
+///    emitted [TagDriver] was holding, and the next tick's empty-handling
+///    can pick up a re-insertion.
 ///
 /// [tags], [taggedTags], and [readerStates] share one listener count, and
 /// the connect/identify/emit path runs whenever ANY of them is listening.
@@ -137,10 +141,17 @@ class CcidSource implements TagSource {
   CcidSource(
     this._platform, {
     this.pollInterval = const Duration(milliseconds: 500),
-  });
+    DateTime Function()? now,
+  }) : _now = now ?? DateTime.now;
 
   final NfcHubPlatform _platform;
   final Duration pollInterval;
+
+  /// Clock used to decide whether a card has had recent activity (see
+  /// [_probeStillPresent]). Overridable purely for testability -- shared
+  /// with each occupied reader's [CcidCard] (wired in [_tryConnect]) so both
+  /// sides compare against the same notion of "now".
+  final DateTime Function() _now;
 
   StreamController<TagDriver>? _tagsController;
   StreamController<ReaderTaggedDriver>? _taggedTagsController;
@@ -159,6 +170,15 @@ class CcidSource implements TagSource {
   /// the card was already identified -- see the class doc for why.
   final Map<String, TagDriver> _occupiedDrivers = {};
 
+  /// The [CcidCard] backing every currently-**occupied** reader, keyed by
+  /// reader name. Populated alongside [_occupiedDrivers] in [_tryConnect] and
+  /// cleared everywhere [_occupiedDrivers] is cleared. [_probeStillPresent]
+  /// routes its liveness probe through this card (serialized with any
+  /// in-flight driver transceive) rather than the raw platform, and consults
+  /// its [CcidCard.lastActivity] to skip the probe while the app is actively
+  /// reading.
+  final Map<String, CcidCard> _occupiedCards = {};
+
   /// The occupied card's Get-UID probe response (hex), captured at connect
   /// time and keyed by reader name. Lets [_probeStillPresent] tell "the same
   /// card is still here" from "a DIFFERENT card was swapped in" (a changed
@@ -166,6 +186,11 @@ class CcidSource implements TagSource {
   /// then the probe falls back to presence-only. Cleared alongside
   /// [_occupiedDrivers].
   final Map<String, String> _occupiedUid = {};
+
+  /// Readers whose USB permission the user denied. connect() is NOT retried
+  /// for these (each retry re-shows the OS dialog); the reader must detach
+  /// and re-attach (it then leaves _status and this set) to be retried.
+  final Set<String> _permissionDenied = {};
 
   @override
   Stream<TagDriver> tags() {
@@ -285,6 +310,7 @@ class CcidSource implements TagSource {
     for (final reader in vanished) {
       final wasOccupied = _status[reader] == _ReaderStatus.occupied;
       _status.remove(reader);
+      _permissionDenied.remove(reader);
       changed = true;
       // The reader itself is gone, so any connection held for its card is
       // no longer reachable through it -- release the handle rather than
@@ -296,6 +322,7 @@ class CcidSource implements TagSource {
         // tags()/taggedTags() during that await window replays a driver for a
         // card that is already gone, over a connection that is mid-teardown.
         _occupiedDrivers.remove(reader);
+        _occupiedCards.remove(reader);
         _occupiedUid.remove(reader);
         await _disconnectQuietly(reader);
       }
@@ -312,6 +339,7 @@ class CcidSource implements TagSource {
     for (final reader in readers) {
       final status = _status[reader];
       if (status == _ReaderStatus.empty) {
+        if (_permissionDenied.contains(reader)) continue;
         if (await _tryConnect(reader)) changed = true;
       } else if (status == _ReaderStatus.occupied) {
         if (!await _probeStillPresent(reader)) changed = true;
@@ -328,16 +356,26 @@ class CcidSource implements TagSource {
     final CcidCard card;
     try {
       card = await _platform.connect(reader);
+    } on PlatformException catch (e) {
+      if (e.code == 'CCID_PERMISSION_DENIED') _permissionDenied.add(reader);
+      return false;
     } catch (_) {
       return false; // No card seated yet -- stays empty, nothing to report.
     }
 
     _status[reader] = _ReaderStatus.occupied;
+    // Share one clock between this card and the source, so lastActivity
+    // (stamped on the card) and _now() (read by _probeStillPresent) agree on
+    // "now" -- matters under a test's injected fake clock.
+    card.now = _now;
+    _occupiedCards[reader] = card;
     // Capture the card's UID as the identity baseline so a later swap (a
     // different card seated without an intervening empty tick) is detected
-    // as a change rather than "still the same card present".
+    // as a change rather than "still the same card present". Routed through
+    // the card (not the raw platform) so it's serialized with any other
+    // transceive already in flight on this card.
     try {
-      _occupiedUid[reader] = await _platform.transceive(reader, _probeApdu) ?? '';
+      _occupiedUid[reader] = await card.transceive(_probeApdu) ?? '';
     } catch (_) {
       _occupiedUid[reader] = ''; // card doesn't answer the probe (e.g. Type B)
     }
@@ -367,9 +405,17 @@ class CcidSource implements TagSource {
   /// next tick freshly connects and identifies whatever is now present,
   /// rather than leaving the previous card's driver/data in place.
   Future<bool> _probeStillPresent(String reader) async {
+    final card = _occupiedCards[reader];
+    // Recent app traffic already proves the card is present -- and injecting
+    // a probe APDU mid-conversation can abort a chained command. Skip.
+    final last = card?.lastActivity;
+    if (last != null && _now().difference(last) < pollInterval) return true;
+
     final String? response;
     try {
-      response = await _platform.transceive(reader, _probeApdu);
+      response = card == null
+          ? await _platform.transceive(reader, _probeApdu)
+          : await card.transceive(_probeApdu);
     } catch (_) {
       // Nothing answers the probe -- the card was removed.
       await _markCardGone(reader);
@@ -392,6 +438,7 @@ class CcidSource implements TagSource {
   Future<void> _markCardGone(String reader) async {
     _status[reader] = _ReaderStatus.empty;
     _occupiedDrivers.remove(reader);
+    _occupiedCards.remove(reader);
     _occupiedUid.remove(reader);
     await _disconnectQuietly(reader);
   }
@@ -429,6 +476,7 @@ class CcidSource implements TagSource {
     // listener attaching mid-disconnect must never replay a driver for a card
     // that is already being torn down.
     _occupiedDrivers.clear();
+    _occupiedCards.clear();
     _occupiedUid.clear();
     for (final entry in _status.entries) {
       if (entry.value == _ReaderStatus.occupied) {

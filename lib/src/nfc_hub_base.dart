@@ -143,11 +143,42 @@ class CcidCard {
 
   CcidCard(this.reader, {this.atr});
 
+  /// Clock used to stamp [lastActivity]. Overridable (by [CcidSource], right
+  /// after a successful connect) so tests can drive both the card's activity
+  /// timestamps and the source's poll-loop comparisons off one shared fake
+  /// clock instead of the card using real time while the source uses an
+  /// injected one.
+  DateTime Function() now = DateTime.now;
+
+  /// Completion time of the most recent [transceive] (success OR failure).
+  /// Null until the first transceive completes. CcidSource uses this to skip
+  /// its liveness probe while the app is actively talking to the card.
+  DateTime? lastActivity;
+
+  // Serializes transceives per card: an APDU never starts until the
+  // previous one completes. Probing and multi-step driver flows share one
+  // card; without this, a poll-loop probe can land between two frames of a
+  // chained command (DESFire GetVersion, MIFARE load-key/auth) and abort it.
+  Future<void> _chain = Future<void>.value();
+
   /// Send APDU command [capdu]
   ///
-  /// Returns the response APDU
+  /// Returns the response APDU. Serialized: if another [transceive] on this
+  /// same card is still in flight, this one waits for it to complete (success
+  /// or failure) before its own APDU is sent.
   Future<String?> transceive(String capdu) {
-    return NfcHubPlatform.instance.transceive(reader, capdu);
+    final completer = Completer<String?>();
+    _chain = _chain.then((_) async {
+      try {
+        completer.complete(
+            await NfcHubPlatform.instance.transceive(reader, capdu));
+      } catch (e, st) {
+        completer.completeError(e, st);
+      } finally {
+        lastActivity = now();
+      }
+    });
+    return completer.future;
   }
 
   /// Disconnect from the card

@@ -116,7 +116,14 @@ void main() {
         final platform = _FakePlatform()
           ..readers = ['reader-1']
           ..cardsPresent.add('reader-1');
-        final source = CcidSource(platform);
+        // A fake clock that advances alongside async.elapse (see the
+        // "liveness probe is SKIPPED" test below for why this is needed:
+        // otherwise the activity-gated probe skip -- comparing against real
+        // wall-clock time, which barely moves under FakeAsync -- would skip
+        // the probe forever after the first connect and this test's removal
+        // would never be detected).
+        var fakeNow = DateTime(2026, 1, 1);
+        final source = CcidSource(platform, now: () => fakeNow);
         addTearDown(source.dispose);
 
         final drivers = <TagDriver>[];
@@ -126,18 +133,21 @@ void main() {
 
         // Tick 1: card seated -> connect succeeds -> emits, occupied.
         async.elapse(const Duration(milliseconds: 500));
+        fakeNow = fakeNow.add(const Duration(milliseconds: 500));
         expect(drivers, hasLength(1));
         expect(states.last, [const ExternalReaderState('reader-1', true)]);
 
         // Card is pulled: the next status probe throws.
         platform.cardsPresent.remove('reader-1');
         async.elapse(const Duration(milliseconds: 500));
+        fakeNow = fakeNow.add(const Duration(milliseconds: 500));
         expect(drivers, hasLength(1), reason: 'no re-emit for the removal');
         expect(states.last, [const ExternalReaderState('reader-1', false)]);
 
         // A new card is seated: connect succeeds again.
         platform.cardsPresent.add('reader-1');
         async.elapse(const Duration(milliseconds: 500));
+        fakeNow = fakeNow.add(const Duration(milliseconds: 500));
         expect(drivers, hasLength(2), reason: 'the re-insertion is a NEW tag');
         expect(drivers.last, isA<Type2Tag>());
         expect(states.last, [const ExternalReaderState('reader-1', true)]);
@@ -173,20 +183,27 @@ void main() {
           ..readers = ['reader-1']
           ..cardsPresent.add('reader-1')
           ..cardUid['reader-1'] = '04AABBCC9000'; // card A
-        final source = CcidSource(platform);
+        // Fake clock advanced alongside async.elapse -- see the "liveness
+        // probe is SKIPPED" test for why this is required for the probe to
+        // ever run again after the first connect.
+        var fakeNow = DateTime(2026, 1, 1);
+        final source = CcidSource(platform, now: () => fakeNow);
         addTearDown(source.dispose);
 
         final drivers = <TagDriver>[];
         source.tags().listen(drivers.add);
 
         async.elapse(const Duration(milliseconds: 500)); // card A detected
+        fakeNow = fakeNow.add(const Duration(milliseconds: 500));
         expect(drivers, hasLength(1));
 
         // Swap in a DIFFERENT card without an intervening empty tick: same
         // reader still has a card, but its Get-UID response changed.
         platform.cardUid['reader-1'] = '04DDEEFF9000'; // card B
         async.elapse(const Duration(milliseconds: 500)); // probe sees change
+        fakeNow = fakeNow.add(const Duration(milliseconds: 500));
         async.elapse(const Duration(milliseconds: 500)); // reconnect + identify
+        fakeNow = fakeNow.add(const Duration(milliseconds: 500));
 
         expect(drivers, hasLength(2),
             reason: 'the swapped-in card must be identified and emitted as a '
@@ -273,31 +290,39 @@ void main() {
         final platform = _FakePlatform()
           ..readers = ['reader-1']
           ..cardsPresent.add('reader-1');
-        final source = CcidSource(platform);
+        // Fake clock advanced alongside async.elapse -- see the "liveness
+        // probe is SKIPPED" test for why this is required for the probe to
+        // ever run again after the first connect.
+        var fakeNow = DateTime(2026, 1, 1);
+        final source = CcidSource(platform, now: () => fakeNow);
         addTearDown(source.dispose);
 
         source.tags().listen((_) {});
 
         // Tick 1: card seated -> connect succeeds, no disconnect yet.
         async.elapse(const Duration(milliseconds: 500));
+        fakeNow = fakeNow.add(const Duration(milliseconds: 500));
         expect(platform.connectLog, ['reader-1']);
         expect(platform.disconnectLog, isEmpty);
 
         // Card pulled: the next probe throws -> disconnect() called once.
         platform.cardsPresent.remove('reader-1');
         async.elapse(const Duration(milliseconds: 500));
+        fakeNow = fakeNow.add(const Duration(milliseconds: 500));
         expect(platform.disconnectLog, ['reader-1']);
 
         // Still empty: the reader keeps retrying connect() every tick (as
         // covered by the existing "connect() that throws" test), but that
         // must never trigger another disconnect.
         async.elapse(const Duration(milliseconds: 500));
+        fakeNow = fakeNow.add(const Duration(milliseconds: 500));
         expect(platform.disconnectLog, ['reader-1']);
 
         // Re-insertion: connect() succeeds again (2nd successful connect),
         // and no new disconnect happens while the new card is held.
         platform.cardsPresent.add('reader-1');
         async.elapse(const Duration(milliseconds: 500));
+        fakeNow = fakeNow.add(const Duration(milliseconds: 500));
         expect(platform.connectLog, ['reader-1', 'reader-1', 'reader-1'],
             reason: 'tick1 connect, tick3 failed retry, tick4 reconnect');
         expect(platform.disconnectLog, ['reader-1'],
@@ -359,7 +384,11 @@ void main() {
         final platform = _FakePlatform()
           ..readers = ['reader-1']
           ..cardsPresent.add('reader-1');
-        final source = CcidSource(platform);
+        // Fake clock advanced alongside async.elapse -- see the "liveness
+        // probe is SKIPPED" test for why this is required for the probe to
+        // ever run again after the first connect.
+        var fakeNow = DateTime(2026, 1, 1);
+        final source = CcidSource(platform, now: () => fakeNow);
         addTearDown(source.dispose);
 
         final drivers = <TagDriver>[];
@@ -367,6 +396,7 @@ void main() {
 
         // Tick 1: card seated and connected.
         async.elapse(const Duration(milliseconds: 500));
+        fakeNow = fakeNow.add(const Duration(milliseconds: 500));
         expect(drivers, hasLength(1));
 
         // Card pulled, and disconnect() itself throws.
@@ -376,6 +406,7 @@ void main() {
           () => async.elapse(const Duration(milliseconds: 500)),
           returnsNormally,
         );
+        fakeNow = fakeNow.add(const Duration(milliseconds: 500));
         expect(platform.disconnectLog, ['reader-1']);
 
         // The loop is still alive: the next tick still polls and a
@@ -383,6 +414,7 @@ void main() {
         platform.disconnectError = null;
         platform.cardsPresent.add('reader-1');
         async.elapse(const Duration(milliseconds: 500));
+        fakeNow = fakeNow.add(const Duration(milliseconds: 500));
         expect(drivers, hasLength(2));
       });
     });
@@ -551,18 +583,24 @@ void main() {
           ..readers = ['reader-1']
           ..cardsPresent.add('reader-1')
           ..disconnectHold = Completer<void>();
-        final source = CcidSource(platform);
+        // Fake clock advanced alongside async.elapse -- see the "liveness
+        // probe is SKIPPED" test for why this is required for the probe to
+        // ever run again after the first connect.
+        var fakeNow = DateTime(2026, 1, 1);
+        final source = CcidSource(platform, now: () => fakeNow);
         addTearDown(source.dispose);
 
         // Tick 1: card seated -> connect succeeds -> emits, occupied.
         source.tags().listen((_) {});
         async.elapse(const Duration(milliseconds: 500));
+        fakeNow = fakeNow.add(const Duration(milliseconds: 500));
         expect(platform.connectLog, ['reader-1']);
 
         // Card is pulled: the next probe throws, kicking off disconnect(),
         // which is held open by platform.disconnectHold.
         platform.cardsPresent.remove('reader-1');
         async.elapse(const Duration(milliseconds: 500));
+        fakeNow = fakeNow.add(const Duration(milliseconds: 500));
         expect(platform.disconnectLog, ['reader-1'],
             reason: 'disconnect() has been called but not yet resolved');
 
@@ -581,6 +619,64 @@ void main() {
         async.elapse(const Duration(milliseconds: 500));
         lateSub.cancel();
       });
+    });
+
+    test(
+        'the liveness probe is SKIPPED while the app is actively reading the '
+        'card (recent CcidCard.transceive traffic proves presence)', () {
+      FakeAsync().run((async) {
+        final platform = _FakePlatform()
+          ..readers = ['reader-1']
+          ..cardsPresent.add('reader-1');
+        NfcHubPlatform.instance = platform;
+        addTearDown(() => NfcHubPlatform.instance = null);
+
+        var fakeNow = DateTime(2026, 1, 1);
+        final source = CcidSource(platform, now: () => fakeNow);
+        addTearDown(source.dispose);
+
+        final drivers = <TagDriver>[];
+        source.tags().listen(drivers.add);
+        async.elapse(const Duration(milliseconds: 500));
+        fakeNow = fakeNow.add(const Duration(milliseconds: 500));
+        expect(drivers, hasLength(1));
+
+        // The identify path + UID baseline ran; note the probe count now.
+        final probesAfterConnect = platform.transceiveLog.length;
+
+        // Simulate the app reading the card continuously: a driver transceive
+        // completes just before each tick.
+        final card = (drivers.single as Type2Tag);
+        for (var i = 0; i < 4; i++) {
+          card.readUid(); // issues a transceive through the same CcidCard
+          async.flushMicrotasks();
+          async.elapse(const Duration(milliseconds: 500));
+          fakeNow = fakeNow.add(const Duration(milliseconds: 500));
+        }
+
+        // Probes issued by the POLL LOOP during those 4 ticks: zero. All
+        // transceives logged were the driver's own readUid calls.
+        final pollProbes = platform.transceiveLog.length -
+            probesAfterConnect -
+            4; // the 4 readUid calls
+        expect(pollProbes, 0);
+      });
+    });
+
+    test('CcidCard serializes concurrent transceives (no interleaving)',
+        () async {
+      final platform = _SlowPlatform();
+      NfcHubPlatform.instance = platform;
+      addTearDown(() => NfcHubPlatform.instance = null);
+
+      final card = CcidCard('reader-1');
+      final first = card.transceive('AA');
+      final second = card.transceive('BB');
+      platform.release('AA');
+      platform.release('BB');
+      await Future.wait([first, second]);
+      // BB must not have STARTED until AA completed.
+      expect(platform.order, ['start:AA', 'end:AA', 'start:BB', 'end:BB']);
     });
 
     // Real timing, not FakeAsync: Stream.multi's done delivery does not
@@ -644,5 +740,36 @@ class _SlowConnectFakePlatform extends _FakePlatform {
     callCount++;
     await hold.future;
     return super.listReaders();
+  }
+}
+
+/// A minimal [NfcHubPlatform] whose [transceive] blocks until [release] is
+/// called for that exact APDU -- used to prove [CcidCard.transceive]
+/// serializes concurrent calls rather than letting a second APDU start
+/// before the first completes.
+///
+/// [release] can race ahead of [transceive] (e.g. a test calls both
+/// [CcidCard.transceive]s -- which don't actually reach this platform until
+/// a later microtask, since [CcidCard] chains them through a `Future.then`
+/// -- and then calls [release] synchronously right after, before either
+/// gate exists yet). Both [release] and [transceive] use `putIfAbsent` on
+/// the same completer so whichever runs first "arms" the gate and whichever
+/// runs second (create-and-await, or complete) sees the already-armed one --
+/// order-independent, so a call to [release] before the matching APDU has
+/// even started never gets silently dropped.
+class _SlowPlatform extends NfcHubPlatform {
+  final order = <String>[];
+  final _gates = <String, Completer<void>>{};
+
+  void release(String capdu) =>
+      _gates.putIfAbsent(capdu, () => Completer<void>()).complete();
+
+  @override
+  Future<String?> transceive(String reader, String capdu) async {
+    order.add('start:$capdu');
+    final gate = _gates.putIfAbsent(capdu, () => Completer<void>());
+    await gate.future;
+    order.add('end:$capdu');
+    return '9000';
   }
 }
