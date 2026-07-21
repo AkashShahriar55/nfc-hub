@@ -34,12 +34,7 @@ class CcidTransportBackend implements TransportBackend {
   /// still gets a fully working MIFARE driver, just without identity fields.
   @override
   Future<MifareClassicTransport> mifareClassic() async {
-    PassiveTargetTypeA? target;
-    try {
-      target = await pollTypeA(card);
-    } catch (_) {
-      target = null;
-    }
+    final target = await _pollTypeAResilient(card);
     return _CcidMifareClassicTransport(card, target);
   }
 
@@ -50,13 +45,8 @@ class CcidTransportBackend implements TransportBackend {
   /// reader-specific dialect, so ISO-DEP must work on ANY CCID reader.
   @override
   Future<IsoDepTransport> isoDep() async {
-    Uint8List uid;
-    try {
-      final target = await pollTypeA(card);
-      uid = target?.uid ?? Uint8List(0);
-    } catch (_) {
-      uid = Uint8List(0);
-    }
+    final target = await _pollTypeAResilient(card);
+    final uid = target?.uid ?? Uint8List(0);
     return _CcidIsoDepTransport(card, uid);
   }
 
@@ -70,6 +60,29 @@ class CcidTransportBackend implements TransportBackend {
 }
 
 String _hex2(int v) => v.toRadixString(16).padLeft(2, '0');
+
+/// One retry: a single transient escape-command failure (a probe racing
+/// the card settling into the field) must not cost the whole session its
+/// uid/atqa/sak identity.
+Future<PassiveTargetTypeA?> _pollTypeAResilient(CcidCard card) async {
+  for (var attempt = 0; attempt < 2; attempt++) {
+    try {
+      final target = await pollTypeA(card);
+      if (target != null) return target;
+    } catch (_) {}
+  }
+  return null;
+}
+
+/// The historical bytes of [atr], per ISO7816-3: T0's low nibble is the
+/// count K; they are the K bytes immediately before the trailing TCK.
+/// Null when [atr] is null, malformed, or carries none.
+Uint8List? historicalBytesFromAtr(Uint8List? atr) {
+  if (atr == null || atr.length < 3) return null;
+  final k = atr[1] & 0x0F;
+  if (k == 0 || atr.length < 2 + k + 1) return null;
+  return Uint8List.sublistView(atr, atr.length - 1 - k, atr.length - 1);
+}
 
 class _CcidType2Transport implements Type2Transport {
   final CcidCard card;
@@ -216,7 +229,7 @@ class _CcidIsoDepTransport implements IsoDepTransport {
   Future<Uint8List> get uid async => _uid;
 
   @override
-  Uint8List? get historicalBytes => card.atr;
+  Uint8List? get historicalBytes => historicalBytesFromAtr(card.atr);
 
   @override
   Future<Uint8List> transceive(Uint8List apdu) async {

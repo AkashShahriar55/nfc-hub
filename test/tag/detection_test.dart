@@ -242,6 +242,51 @@ void main() {
     });
 
     test(
+        'a MIFARE Classic card whose reader answers SELECT with a failure '
+        'SW is identified as MIFARE (SAK), not misclassified as ISO-DEP '
+        '(regression: SELECT used to be probed BEFORE the MIFARE poll and '
+        'accepted ANY >= 4 hex-char response as ISO-DEP proof, so the '
+        "ACR122U's reader-level failure SW 6300 -- returned for a card it "
+        "couldn't talk to via ISO7816 -- wrongly won over the authoritative "
+        'SAK poll)', () async {
+      NfcHubPlatform.instance = _FakeCcidPlatform({
+        'FFCA000000': '0102030449', // Get UID -- content irrelevant here
+        'FFB0000304': '6300', // CC read fails -- not Type 2
+        '00A4040000': '6300', // reader-level failure SW -- NOT ISO-DEP proof
+        // PN532 InListPassiveTarget: Type A target, ATQA 0004, SAK 08
+        // (MIFARE Classic 1K).
+        'FF00000004D44A0100': 'D54B010100040804AABBCCDD9000',
+      });
+      final card = CcidCard('fake-reader');
+
+      final driver = await identifyTag(card);
+
+      expect(driver, isA<MifareClassicTag>());
+    });
+
+    test(
+        'SELECT answered with a card-level ISO7816 SW still means ISO-DEP, '
+        'even after a MIFARE poll finds a genuine (non-Classic) target',
+        () async {
+      NfcHubPlatform.instance = _FakeCcidPlatform({
+        'FFCA000000': '00019000', // Get UID ok
+        'FFB0000304': '6A82', // CC read fails -- not Type 2
+        // PN532 poll finds a real target, but SAK 0x20 (ISO14443-4
+        // compliant, e.g. DESFire) is not a MIFARE Classic family -- the
+        // MIFARE block must fall through instead of matching.
+        'FF00000004D44A0100': 'D54B010103442004AABBCCDD9000',
+        // 6A82 = file not found -- only an ISO7816 command interpreter on
+        // the card produces that, unlike the reader-level 6300/6F00 SWs.
+        '00A4040000': '6A82',
+      });
+      final card = CcidCard('fake-reader');
+
+      final driver = await identifyTag(card);
+
+      expect(driver, isA<IsoDepTag>());
+    });
+
+    test(
         'recognizes a FeliCa card by a FeliCa Polling response even though '
         'every other positive probe (Type 2 CC read, ISO-DEP SELECT, MIFARE '
         'auth) fails', () async {
