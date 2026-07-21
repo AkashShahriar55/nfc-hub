@@ -563,7 +563,9 @@ git add lib/src/nfc_hub_base.dart lib/src/source/ccid_source.dart test/source/cc
 git commit -m "fix: serialize per-card APDUs and suppress liveness probe during active reads; stop permission-dialog spam"
 ```
 
----### Task 5: Exactly-once delivery for seated CCID cards (kill replay double-reads)
+---
+
+### Task 5: Exactly-once delivery for seated CCID cards (kill replay double-reads)
 
 **Files:**
 - Modify: `lib/src/source/ccid_source.dart`
