@@ -1,7 +1,7 @@
 name: nfc_hub
 description: "A Flutter plugin for reading NFC tags through external CCID/PC-SC readers and the device's built-in NFC antenna."
 version: 0.7.0
-homepage: https://github.com/cheqplease/nfc_hub
+homepage: https://github.com/CHEQPlease/nfc-ccid
 
 environment:
   sdk: ">=3.5.0 <4.0.0"

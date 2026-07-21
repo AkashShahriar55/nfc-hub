@@ -10,12 +10,34 @@ the device's built-in NFC antenna.
 
 ## Installation
 
+Not yet published to pub.dev — depend on it via git:
+
 ```yaml
 dependencies:
-  nfc_hub: ^0.7.0
+  nfc_hub:
+    git:
+      url: git@github.com:CHEQPlease/nfc-ccid.git
+      ref: master   # or pin a tag/commit for reproducible builds
 ```
 
-This plugin uses AGP 8.7, thus requires Gradle 8.7+ (which needs Java 17+ to run).
+Or, while developing against a local checkout:
+
+```yaml
+dependencies:
+  nfc_hub:
+    path: ../ccid   # path to this repo relative to your app
+```
+
+Once published, this becomes simply `nfc_hub: ^0.7.0`.
+
+### Android requirements
+
+* `minSdkVersion 26` or higher in your app's `android/app/build.gradle`.
+* Gradle 8.7+ / Java 17+ (the plugin uses AGP 8.7).
+* **No manifest changes needed.** The plugin's own manifest declares the NFC
+  permission and marks NFC hardware optional; Android merges these into your
+  app automatically. USB reader access uses Android's runtime permission
+  dialog — no manifest entries for that either.
 
 ## Quickstart
 
