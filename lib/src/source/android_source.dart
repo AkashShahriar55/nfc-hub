@@ -65,16 +65,39 @@ TagTechHint? hintFromTechList(List<String> techList) {
 ///    is `NfcHub.connectionState()`'s job now: an app checks (or watches)
 ///    it before/while listening to `tagStream()` rather than relying on a
 ///    thrown error here.
-///  - A hinted-but-unidentifiable discovery (`identifyFromBackend` throws)
-///    is logged and dropped -- a silent dropped tap, with no per-tap error
-///    surfaced to the app. This mirrors `CcidSource`, which does the same
-///    for a card that connects but fails identification. Seamlessness means
-///    a bad tap just doesn't produce a tag; the app is expected to notice
-///    "no tag yet" rather than being handed a per-source error channel.
+///  - An unrecognized tech list, or a hinted-but-unidentifiable discovery
+///    (`identifyFromBackend` throws), is surfaced as a **stream error**
+///    (`UnrecognizedTagException`, or the original error) through [tags]
+///    rather than being logged and dropped. The user did tap something;
+///    silence here would be indistinguishable from a broken reader. It
+///    never tears down the stream -- listening continues for the next
+///    discovery, mirroring how the CCID probing path logs and continues
+///    rather than throwing away the whole session over one card.
+///
+/// Android reader mode can re-enumerate the same physical tag on a field
+/// flicker and call `onTagDiscovered` again for a single tap; without
+/// mitigation this reads as two taps. [AndroidNfcSource] debounces this: a
+/// discovery whose UID matches the immediately preceding one, arriving
+/// within [rediscoverDebounce] of it, is dropped rather than identified
+/// again. A different UID, or the same UID after the window, passes
+/// through normally.
 class AndroidNfcSource implements TagSource {
-  AndroidNfcSource(this._manager);
+  AndroidNfcSource(
+    this._manager, {
+    this.rediscoverDebounce = const Duration(milliseconds: 1000),
+    DateTime Function()? now,
+  }) : _now = now ?? DateTime.now;
 
   final AndroidNfcManager _manager;
+
+  /// Same-UID discoveries closer together than this are treated as a
+  /// single field-flicker re-enumeration, not a new tap. See the class doc.
+  final Duration rediscoverDebounce;
+  final DateTime Function() _now;
+
+  String? _lastUidHex;
+  DateTime? _lastDiscoveryAt;
+
   StreamController<TagDriver>? _controller;
   StreamSubscription<NfcTagDiscovery>? _discoverySub;
 
@@ -117,12 +140,29 @@ class AndroidNfcSource implements TagSource {
   }
 
   Future<void> _onDiscovery(NfcTagDiscovery discovery) async {
+    final uidHex =
+        discovery.uid.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    final at = _now();
+    final lastAt = _lastDiscoveryAt;
+    // Reader mode can re-enumerate the SAME physical tag on a field flicker
+    // and call onTagDiscovered again -- to an app that is one tap read
+    // twice. A same-UID discovery inside the debounce window is that
+    // re-enumeration, not a new tap.
+    if (uidHex == _lastUidHex &&
+        lastAt != null &&
+        at.difference(lastAt) < rediscoverDebounce) {
+      _lastDiscoveryAt = at;
+      return;
+    }
+    _lastUidHex = uidHex;
+    _lastDiscoveryAt = at;
+
     final hint = hintFromTechList(discovery.techList);
     if (hint == null) {
-      developer.log(
-        'Skipping tag with unrecognized tech list: ${discovery.techList}',
-        name: 'nfc_hub.AndroidNfcSource',
-      );
+      // Surface as an error: the user DID tap something; silence here is
+      // indistinguishable from a broken reader.
+      _controller?.addError(UnrecognizedTagException(
+          'Tag with unsupported tech list: ${discovery.techList}'));
       return;
     }
     try {
@@ -131,13 +171,9 @@ class AndroidNfcSource implements TagSource {
       _controller?.add(driver);
     } catch (error, stackTrace) {
       // Never let one tag's identification failure tear down the stream --
-      // log it and keep listening for the next discovery.
-      developer.log(
-        'Failed to identify tag (hint: $hint): $error',
-        name: 'nfc_hub.AndroidNfcSource',
-        error: error,
-        stackTrace: stackTrace,
-      );
+      // surface it as a stream error and keep listening for the next
+      // discovery.
+      _controller?.addError(error, stackTrace);
     }
   }
 
