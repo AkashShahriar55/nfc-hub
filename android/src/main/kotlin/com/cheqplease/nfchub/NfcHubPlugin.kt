@@ -114,6 +114,17 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                         }
                     } else {
                         Log.d(TAG, "permission denied for device $device")
+                        val deniedName = intent.getStringExtra("name")
+                        val reader = deniedName?.let { readers[it] }
+                        val pending = reader?.result
+                        if (reader != null && pending != null) {
+                            readers[reader.name] = reader.copy(result = null)
+                            pending.error(
+                                "CCID_PERMISSION_DENIED",
+                                "USB permission denied for reader ${reader.name}",
+                                null
+                            )
+                        }
                     }
                 }
             }
@@ -121,6 +132,15 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 synchronized(this) {
                     val device: UsbDevice? = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
                     device?.let { detachedDevice ->
+                        readers.values
+                            .filter { it.deviceName == detachedDevice.deviceName }
+                            .forEach { r ->
+                                r.result?.error(
+                                    "CCID_READER_DETACHED",
+                                    "Reader ${r.name} detached while a request was pending",
+                                    null
+                                )
+                            }
                         readers.entries.removeIf { (_, reader) ->
                             reader.deviceName == detachedDevice.deviceName
                         }
@@ -398,6 +418,17 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         val reader = readers[name]
         if (reader == null) {
             result.error("CCID_READER_NOT_FOUND", "Reader not found", null)
+            return
+        }
+        if (reader.result != null) {
+            // A permission request is already in flight for this reader; completing
+            // a second one would orphan the first (a Result that never completes
+            // hangs the Dart-side await forever -- see CcidSource's poll loop).
+            result.error(
+                "CCID_PERMISSION_PENDING",
+                "A USB permission request is already pending for $name",
+                null
+            )
             return
         }
         val device =
