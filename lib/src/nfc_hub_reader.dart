@@ -124,7 +124,12 @@ class NfcHubReader {
             // is the startSession parameter captured by this closure: if the
             // session has since been replaced, an in-flight read still
             // reports to the session it belonged to, which is correct.
-            onError?.call(error);
+            // Guard the report itself: an onError that throws must not fail
+            // this chain entry, or every later onDiscovered would be
+            // silently skipped for the session's lifetime.
+            try {
+              onError?.call(error);
+            } catch (_) {}
           }
         });
       },
