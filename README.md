@@ -32,7 +32,7 @@ Once published, this becomes simply `nfc_hub: ^0.7.0`.
 
 ### Android requirements
 
-* `minSdkVersion 26` or higher in your app's `android/app/build.gradle`.
+* `minSdkVersion 24` or higher in your app's `android/app/build.gradle`.
 * Gradle 8.7+ / Java 17+ (the plugin uses AGP 8.7).
 * **No manifest changes needed.** The plugin's own manifest declares the NFC
   permission and marks NFC hardware optional; Android merges these into your

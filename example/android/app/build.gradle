@@ -41,7 +41,7 @@ android {
 
     defaultConfig {
         applicationId "com.cheqplease.nfchub.example"
-        minSdkVersion 26
+        minSdkVersion 24
         targetSdk flutter.targetSdkVersion
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
