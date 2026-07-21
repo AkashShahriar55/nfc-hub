@@ -87,9 +87,14 @@ class NfcHubReader {
   /// Future it is awaited before the next tag is delivered, so reads on one tag
   /// never overlap the next (important for the single-threaded CCID reader). A
   /// throwing/failing [onDiscovered] is isolated — it does not tear down the
-  /// session. [onError], if given, receives stream errors; if omitted, stream
-  /// errors are silently swallowed (the session stays alive), so supply
-  /// [onError] if you need to observe failures. Calling
+  /// session. [onError], if given, receives stream errors — this now
+  /// includes per-tap failures (e.g. an unreadable/unrecognized tag, or a
+  /// tag that connects but fails identification), not just connection-level
+  /// errors: the session survives these and keeps delivering later taps. If
+  /// [onError] is omitted, all such errors are silently swallowed (the
+  /// session stays alive), so always supply [onError] and use it to show a
+  /// lightweight "couldn't read tag, try again" UI rather than leaving
+  /// failed taps unexplained. Calling
   /// startSession while a session is active first stops the previous one; the
   /// serialization chain is not reset, so the new session's first read still
   /// waits for any still-in-flight previous read (no overlap across a replace).
