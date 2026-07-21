@@ -62,7 +62,20 @@ class _HarnessHomeState extends State<HarnessHome> {
   void initState() {
     super.initState();
     final tags = widget.tags ?? _hub.tagStream();
-    _subscription = tags.listen(_onTag);
+    _subscription = tags.listen(_onTag, onError: _onTagError);
+  }
+
+  /// Per-tap stream errors (e.g. [UnrecognizedTagException] for a tag no
+  /// known family matches, or an identification failure on a seated card)
+  /// must be visible to the operator -- hardware-validation scenario 9 taps
+  /// an unsupported tag and expects observable feedback -- and must not
+  /// become unhandled zone errors. The subscription itself survives; later
+  /// taps keep arriving.
+  void _onTagError(Object error) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Could not read tag: $error')),
+    );
   }
 
   Future<void> _onTag(TagDriver driver) async {

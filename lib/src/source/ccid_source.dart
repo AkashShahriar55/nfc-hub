@@ -419,7 +419,10 @@ class CcidSource implements TagSource {
     _status[reader] = _ReaderStatus.occupied;
     // Share one clock between this card and the source, so lastActivity
     // (stamped on the card) and _now() (read by _probeStillPresent) agree on
-    // "now" -- matters under a test's injected fake clock.
+    // "now" -- matters under a test's injected fake clock. CcidSource is the
+    // one sanctioned production writer of CcidCard.now (the @visibleForTesting
+    // annotation exists to keep APPS from setting it), hence the ignore.
+    // ignore: invalid_use_of_visible_for_testing_member
     card.now = _now;
     _occupiedCards[reader] = card;
     // Capture the card's UID as the identity baseline so a later swap (a
@@ -467,6 +470,13 @@ class CcidSource implements TagSource {
   /// different card was swapped in (its UID changed) -- in both cases the
   /// next tick freshly connects and identifies whatever is now present,
   /// rather than leaving the previous card's driver/data in place.
+  ///
+  /// The recent-activity skip below narrows -- but does not eliminate --
+  /// the probe-mid-conversation risk (F3's residual): a single in-flight
+  /// frame that outlasts [pollInterval] since [CcidCard.lastActivity] can
+  /// still let a tick enqueue a probe that lands between two chained frames
+  /// of the app's command sequence (the per-card serialization only orders
+  /// it after the frame in flight, not after the whole sequence).
   Future<bool> _probeStillPresent(String reader) async {
     final card = _occupiedCards[reader];
     // Recent app traffic already proves the card is present -- and injecting

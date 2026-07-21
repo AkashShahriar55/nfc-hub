@@ -142,7 +142,7 @@ class AndroidNfcManager {
           _nfcStateChangesController.addError(error, stackTrace);
         default:
           // The type itself couldn't be read (or is otherwise unknown):
-          // fan out to all three streams, matching _onEventError.
+          // fan out to both streams, matching _onEventError.
           _onEventError(error, stackTrace);
       }
     }

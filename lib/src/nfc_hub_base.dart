@@ -163,7 +163,8 @@ class CcidCard {
   /// after a successful connect) so tests can drive both the card's activity
   /// timestamps and the source's poll-loop comparisons off one shared fake
   /// clock instead of the card using real time while the source uses an
-  /// injected one.
+  /// injected one. Not part of the app-facing API: apps must never set this.
+  @visibleForTesting
   DateTime Function() now = DateTime.now;
 
   /// Completion time of the most recent [transceive] (success OR failure).
