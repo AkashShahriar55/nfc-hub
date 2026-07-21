@@ -242,6 +242,12 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                     try {
                         val resp = ccid.xfrBlock(capdu.hexToByteArray())
                         mainHandler.post { result.success(resp.toHexString()) }
+                    } catch (e: CcidException) {
+                        // Expected in normal operation (e.g. the liveness probe
+                        // hitting a just-removed card) -- one debug line, no
+                        // stack trace. The Dart side still gets the error reply.
+                        Log.d(TAG, "CCID transceive failed: ${e.message}")
+                        mainHandler.post { result.error("CCID_TRANSCEIVE_ERROR", e.message, null) }
                     } catch (e: Throwable) {
                         Log.e(TAG, "CCID transceive failed off-thread: ${e.message}", e)
                         mainHandler.post { result.error("CCID_TRANSCEIVE_ERROR", e.message, null) }
@@ -556,9 +562,25 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 return null
             }
             val atr = ccid.iccPowerOn()
+            // ACR122U firmware quirk: the PICC slot can answer iccPowerOn with
+            // SUCCESS and a degenerate stub ATR (3B 00) when NO card is present;
+            // every later transceive then fails with iccStatus=2 (ICC not
+            // present). No real contactless card yields an ATR this short (PC/SC
+            // Part 3 pseudo-ATRs and ATS-derived ATRs are always >= 5 bytes), so
+            // treat it as "no card" here -- otherwise the Dart poll loop sees a
+            // phantom card and spins a connect/identify-fail/disconnect loop.
+            if (atr.size < 5) {
+                Log.d(TAG, "Degenerate ATR ${atr.toHexString()} -- no card present")
+                return null
+            }
             Log.d(TAG, "ATR: ${atr.toHexString()}")
             success = true
             Pair(ccid, atr)
+        } catch (e: CcidException) {
+            // Expected on every poll tick of an empty reader (no card answers
+            // power-on) -- debug, not error, and no stack trace.
+            Log.d(TAG, "No card / power-on failed: ${e.message}")
+            null
         } catch (e: Exception) {
             Log.e(TAG, "Failed to connect to interface: ${e.message}")
             null

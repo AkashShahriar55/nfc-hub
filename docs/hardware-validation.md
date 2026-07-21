@@ -14,3 +14,4 @@ Device: ____  Reader: ACR122U  Date: ____
 | 8 | Turn NFC off then on while session active | Built-in reads resume without app restart | |
 | 9 | Tap an unsupported tag (e.g. ISO15693) | onError fires with UnrecognizedTagException | |
 | 10 | Unplug reader mid-read | No crash; readerStates drops the reader; re-plug works | |
+| 11 | Reader attached, NO card, watch logcat for 60 s | No repeating `ATR: 3b00` / `Card error: 2` loop; no phantom tag row/error in UI (degenerate-ATR guard) | |
