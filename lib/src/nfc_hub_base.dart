@@ -83,6 +83,17 @@ class NfcHub {
   /// the underlying source(s) (Android reader mode / the CCID poll loop)
   /// are stopped just like they are when a tag actually arrives, rather
   /// than being left running forever.
+  ///
+  /// Because this is backed by `.first`, the returned future also completes
+  /// with an error -- it does NOT keep waiting for a later, successful tap
+  /// -- if the very first event on the stream is itself an error: an
+  /// unreadable/unrecognized tap (e.g. [UnrecognizedTagException] from an
+  /// Android discovery whose tech list matches nothing known, or the
+  /// underlying identification failure for a tag that connects but can't be
+  /// identified). A caller that wants "keep prompting the user until a tag
+  /// is actually read" behavior -- tap-until-success, ignoring bad taps in
+  /// between -- should use [tagStream] (or `NfcHubReader.startSession`)
+  /// directly and handle `onError` itself, rather than [readTag].
   Future<TagDriver> readTag({CcidSourceFilter? from, Duration? timeout}) {
     final stream = tagStream(from: from);
     if (timeout == null) return stream.first;

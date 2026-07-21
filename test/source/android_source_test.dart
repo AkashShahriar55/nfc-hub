@@ -293,6 +293,40 @@ void main() {
       expect(tags, hasLength(2));
     });
 
+    test(
+        'a stop/start cycle clears the debounce window -- a same-UID re-tap '
+        'after restart is delivered, not dropped', () async {
+      final manager = _FakeAndroidNfcManager();
+      addTearDown(manager.dispose);
+      var fakeNow = DateTime(2026, 1, 1);
+      final source = AndroidNfcSource(manager, now: () => fakeNow);
+      final tags = <TagDriver>[];
+      final sub1 = source.tags().listen(tags.add);
+      await pumpEventQueue();
+
+      sink!.success(_type2Event(handle: 1));
+      await pumpEventQueue();
+      expect(tags, hasLength(1));
+
+      // Last listener cancels -- AndroidNfcSource stops reader mode.
+      await sub1.cancel();
+      await pumpEventQueue();
+
+      // Still well inside what would have been the debounce window if it
+      // had survived the stop.
+      fakeNow = fakeNow.add(const Duration(milliseconds: 300));
+      final sub2 = source.tags().listen(tags.add);
+      addTearDown(sub2.cancel);
+      await pumpEventQueue();
+
+      sink!.success(_type2Event(handle: 2)); // same uid as before the stop
+      await pumpEventQueue();
+
+      expect(tags, hasLength(2),
+          reason: 'a re-tap of the same tag after a stop/start cycle must '
+              'not be debounced against a discovery from before the stop');
+    });
+
     test('dispose() stops reader mode', () async {
       final manager = _FakeAndroidNfcManager();
       addTearDown(manager.dispose);

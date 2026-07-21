@@ -136,6 +136,13 @@ class AndroidNfcSource implements TagSource {
   Future<void> _stop() async {
     await _discoverySub?.cancel();
     _discoverySub = null;
+    // A stop/start cycle (last listener cancels, a new one arrives later)
+    // must not carry the debounce window across it -- otherwise a
+    // legitimate re-tap of the same tag, made after listening resumed,
+    // would be silently swallowed as if it were field flicker from a
+    // session that has already ended.
+    _lastUidHex = null;
+    _lastDiscoveryAt = null;
     await _manager.stopReaderMode();
   }
 
