@@ -31,6 +31,7 @@ class NfcHub {
   AndroidNfcManager? _androidNfcManager;
   AndroidNfcSource? _androidNfcSource;
   CcidSource? _ccidSource;
+  final Map<CcidSourceFilter?, Stream<TagDriver>> _tagStreams = {};
 
   AndroidNfcManager get _manager => _androidNfcManager ??= AndroidNfcManager();
 
@@ -66,8 +67,12 @@ class NfcHub {
   ///
   /// Starts whichever underlying source(s) the filter selects on first
   /// listen, and stops them once the last listener of this stream cancels.
+  ///
+  /// Returns the same stream instance for equal filter values, so multiple
+  /// listeners share one pipeline (one set of source subscriptions) instead
+  /// of creating parallel pipelines.
   Stream<TagDriver> tagStream({CcidSourceFilter? from}) {
-    return mergeTagStreams(
+    return _tagStreams[from] ??= mergeTagStreams(
       androidSource: _nfcSource,
       ccidSource: _readerSource,
       filter: from,

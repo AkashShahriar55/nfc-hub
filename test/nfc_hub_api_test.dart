@@ -164,6 +164,28 @@ void main() {
     // turn that FakeAsync's synchronous time-faking cannot fake. The same
     // seam `android_source_test.dart`/`android_nfc_manager_test.dart` use
     // (`pumpEventQueue()`, real timers) is reused here instead.
+    test('returns one shared stream per filter', () {
+      final manager = _FakeAndroidNfcManager();
+      final platform = _FakePlatform();
+      final hub = NfcHub(
+        androidNfcManager: manager,
+        ccidSource: CcidSource(platform),
+      );
+      expect(identical(hub.tagStream(), hub.tagStream()), isTrue);
+      expect(
+        identical(
+          hub.tagStream(from: const CcidSourceFilter.builtInNfc()),
+          hub.tagStream(from: const CcidSourceFilter.builtInNfc()),
+        ),
+        isTrue,
+      );
+      expect(
+        identical(hub.tagStream(),
+            hub.tagStream(from: const CcidSourceFilter.builtInNfc())),
+        isFalse,
+      );
+    });
+
     test(
         'no filter: emits tags from BOTH a fake Android source and a fake '
         'CCID source, interleaved', () async {
