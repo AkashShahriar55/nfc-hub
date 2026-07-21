@@ -56,11 +56,13 @@ class ReaderTaggedDriver {
 
 /// A [TagDriver] identified for a currently-**occupied** reader, held so it
 /// can be delivered to whichever [CcidSource.tags]/[CcidSource.taggedTags]
-/// subscriber sees it first -- see the class doc's exactly-once contract.
-/// [delivered] flips to true the moment the driver reaches ANY subscriber
-/// (live emission at identify time, or replay to a first later subscriber)
-/// and gates every replay after that: a card that stays seated is handed to
-/// exactly one listener, process-wide, ever.
+/// subscriber sees it first -- see the class doc's delivery contract.
+/// [delivered] flips to true the moment the driver reaches a subscriber
+/// whose (optional) reader filter matches it (live forwarding at identify
+/// time, or replay to a first later matching subscriber) and gates every
+/// replay after that: a presentation is never replayed once ANY matching
+/// consumer has actually received it. A subscriber filtered to a DIFFERENT
+/// reader never marks it -- discarding an event must not consume it.
 class _HeldDriver {
   _HeldDriver(this.driver);
 
@@ -120,19 +122,26 @@ const _probeApdu = 'FFCA000000';
 /// that card, [CcidSource] holds the built [TagDriver] for every
 /// **occupied** reader in [_occupiedDrivers] as a [_HeldDriver].
 ///
-/// **Each card presentation is delivered exactly once, process-wide** --
-/// to whichever listener exists first. If [tags] or [taggedTags] already has
-/// a listener at identify time, the driver is emitted live to it immediately
-/// and marked [_HeldDriver.delivered]. Otherwise it sits held and undelivered
-/// until [tags]/[taggedTags] are built with [Stream.multi]: each NEW
+/// **Each card presentation is replayed at most once** -- and only to a
+/// consumer whose filter actually matches it. Live delivery at identify
+/// time can fan out to SEVERAL simultaneous [tags]/[taggedTags] listeners
+/// (that is documented behavior); the moment a matching listener receives
+/// it live, the presentation is marked [_HeldDriver.delivered] and gated
+/// out of every later replay. A presentation NOT consumed by any matching
+/// listener (nobody listening yet, or only listeners filtered to OTHER
+/// readers) sits held and undelivered until [tags]/[taggedTags] -- built
+/// with [Stream.multi] -- attach a new subscription: each NEW
 /// subscription's callback synchronously scans the held drivers and replays
-/// only the ones still undelivered, marking each delivered as it does. A
-/// widget rebuild or session restart that cancels and re-listens therefore
-/// does NOT see a card its predecessor subscription already received -- and
-/// a second concurrent listener joining after the first already got it sees
-/// nothing either. `Stream.multi` runs its callback once per subscription
-/// (unlike `.broadcast()`, whose `add` always reaches every current listener
-/// at once), so this replay-and-mark check only ever runs for the
+/// only the still-undelivered ones its own filter matches, marking each
+/// delivered as it does. A widget rebuild or session restart that cancels
+/// and re-listens therefore does NOT see a card its predecessor
+/// subscription already received -- and a second listener joining after the
+/// first already got it sees nothing either. Crucially, a subscription
+/// filtered to reader A never consumes reader B's card: B's presentation
+/// stays held for the first later subscriber that DOES match it.
+/// `Stream.multi` runs its callback once per subscription (unlike
+/// `.broadcast()`, whose `add` always reaches every current listener at
+/// once), so this replay-and-mark check only ever runs for the
 /// newly-attached subscriber.
 ///
 /// A reader that disappears from [NfcHubPlatform.listReaders] entirely
@@ -174,7 +183,6 @@ class CcidSource implements TagSource {
   /// sides compare against the same notion of "now".
   final DateTime Function() _now;
 
-  StreamController<TagDriver>? _tagsController;
   StreamController<ReaderTaggedDriver>? _taggedTagsController;
   StreamController<List<ExternalReaderState>>? _statesController;
   Timer? _timer;
@@ -214,57 +222,71 @@ class CcidSource implements TagSource {
   /// and re-attach (it then leaves _status and this set) to be retried.
   final Set<String> _permissionDenied = {};
 
-  @override
-  Stream<TagDriver> tags() {
-    // Stream.multi (isBroadcast: true) invokes this callback once per
-    // subscription, each with its OWN controller -- unlike a plain
-    // `.broadcast()` stream where a single `add` reaches every listener at
-    // once. That per-subscription isolation is what lets a NEW listener's
-    // replay-and-mark scan below run exactly once, for exactly that
-    // subscriber, without a concurrent listener's attach racing it.
-    return Stream<TagDriver>.multi((controller) {
-      for (final held in _occupiedDrivers.values) {
-        if (!held.delivered) {
-          held.delivered = true;
-          controller.add(held.driver);
-        }
-      }
-      final live = (_tagsController ??= StreamController<TagDriver>.broadcast(
+  /// The single shared live broadcast pipeline behind [tags] and
+  /// [taggedTags]. Created lazily; its onListen/onCancel keep the poll
+  /// loop's listener count single-sourced (a broadcast controller fires
+  /// onListen on the 0->1 listener transition and onCancel on the last
+  /// cancel, so it contributes at most one "someone is consuming tags" unit
+  /// to [_listenerCount] alongside [_statesController]).
+  StreamController<ReaderTaggedDriver> get _liveTaggedController =>
+      _taggedTagsController ??= StreamController<ReaderTaggedDriver>.broadcast(
         onListen: _onListen,
         onCancel: _onCancel,
-      ))
-          .stream
-          .listen(controller.add,
-              onError: controller.addError, onDone: controller.close);
-      controller.onCancel = live.cancel;
-    }, isBroadcast: true);
-  }
+      );
+
+  /// Thin wrapper over [taggedTags] that strips the reader name -- ALL
+  /// hold/replay/delivered-marking logic lives in [taggedTags], so the two
+  /// entry points can never disagree about whether a presentation was
+  /// consumed, and the poll-loop listener count stays single-sourced.
+  @override
+  Stream<TagDriver> tags() => taggedTags().map((tagged) => tagged.driver);
 
   /// The same tags as [tags], but paired with the reader that produced each
   /// one -- see [ReaderTaggedDriver]. Used by Task 7's unified stream to
-  /// implement `CcidSourceFilter.reader(name)`.
+  /// implement `CcidSourceFilter.reader(name)`, by passing that name as
+  /// [reader].
   ///
-  /// See [tags] for why this is built as a [Stream.multi]: each new
-  /// subscription replays only the still-undelivered held drivers to
-  /// itself, marking them delivered as it does -- the exactly-once contract
-  /// from the class doc applies across [tags] and [taggedTags] together.
-  Stream<ReaderTaggedDriver> taggedTags() {
+  /// With a non-null [reader], only that reader's drivers are delivered --
+  /// and, crucially, only that reader's presentations are ever CONSUMED:
+  /// a filtered subscription neither replays nor marks-delivered a held
+  /// driver from any other reader, so another reader's card stays held for
+  /// the first later subscriber whose filter matches it (see the class doc).
+  ///
+  /// Built as a [Stream.multi] (isBroadcast: true): the callback runs once
+  /// per subscription, each with its OWN controller -- unlike a plain
+  /// `.broadcast()` stream where a single `add` reaches every listener at
+  /// once. That per-subscription isolation is what lets a NEW listener's
+  /// replay-and-mark scan run exactly once, for exactly that subscriber,
+  /// without a concurrent listener's attach racing it. The live path then
+  /// forwards from the one shared broadcast controller, marking the held
+  /// driver delivered only when this subscription actually forwards it to
+  /// its consumer.
+  Stream<ReaderTaggedDriver> taggedTags({String? reader}) {
     return Stream<ReaderTaggedDriver>.multi((controller) {
       for (final entry in _occupiedDrivers.entries) {
+        if (reader != null && entry.key != reader) continue;
         final held = entry.value;
         if (!held.delivered) {
           held.delivered = true;
           controller.add(ReaderTaggedDriver(entry.key, held.driver));
         }
       }
-      final live = (_taggedTagsController ??=
-              StreamController<ReaderTaggedDriver>.broadcast(
-        onListen: _onListen,
-        onCancel: _onCancel,
-      ))
-          .stream
-          .listen(controller.add,
-              onError: controller.addError, onDone: controller.close);
+      final live = _liveTaggedController.stream.listen(
+        (tagged) {
+          if (reader != null && tagged.reader != reader) return;
+          // This event is reaching a real consumer -- mark the presentation
+          // spent so no later subscriber's replay scan hands it out again.
+          // (Guard on identity: the held driver may already belong to a
+          // NEWER presentation on the same reader.)
+          final held = _occupiedDrivers[tagged.reader];
+          if (held != null && identical(held.driver, tagged.driver)) {
+            held.delivered = true;
+          }
+          controller.add(tagged);
+        },
+        onError: controller.addError,
+        onDone: controller.close,
+      );
       controller.onCancel = live.cancel;
     }, isBroadcast: true);
   }
@@ -412,19 +434,14 @@ class CcidSource implements TagSource {
     }
     try {
       final driver = await identifyTag(card);
-      final held = _HeldDriver(driver);
-      _occupiedDrivers[reader] = held;
-      final tagsController = _tagsController;
-      final taggedController = _taggedTagsController;
-      if ((tagsController?.hasListener ?? false) ||
-          (taggedController?.hasListener ?? false)) {
-        // Someone is already listening live -- deliver now and mark this
-        // presentation as spent, so no later subscriber's replay scan
-        // (tags()/taggedTags()'s Stream.multi callback) hands it out again.
-        held.delivered = true;
-        tagsController?.add(driver);
-        taggedController?.add(ReaderTaggedDriver(reader, driver));
-      }
+      _occupiedDrivers[reader] = _HeldDriver(driver);
+      // ALWAYS emit on the one shared live pipeline. Each tags()/taggedTags()
+      // subscription that actually forwards this event to its consumer marks
+      // the held driver delivered (see taggedTags); if no subscription's
+      // filter matches (or nobody is listening), `delivered` stays false and
+      // the first later matching subscriber gets it via replay -- a filtered
+      // pipeline discarding the event can no longer strand the presentation.
+      _liveTaggedController.add(ReaderTaggedDriver(reader, driver));
     } catch (error, stackTrace) {
       // Connected but couldn't identify the card -- keep the reader marked
       // occupied (a card IS physically seated); log and move on, same as
@@ -524,7 +541,6 @@ class CcidSource implements TagSource {
         await _disconnectQuietly(entry.key);
       }
     }
-    await _tagsController?.close();
     await _taggedTagsController?.close();
     await _statesController?.close();
   }

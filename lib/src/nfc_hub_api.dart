@@ -133,13 +133,14 @@ Stream<TagDriver> mergeTagStreams({
           .tags()
           .listen(controller.add, onError: controller.addError));
     } else {
-      final readerName = filter._readerName;
-      subs.add(ccidSource.taggedTags().listen(
-        (tagged) {
-          if (tagged.reader == readerName) controller.add(tagged.driver);
-        },
-        onError: controller.addError,
-      ));
+      // Filter INSIDE CcidSource (not downstream here): the source only
+      // marks a held presentation delivered when a subscription actually
+      // forwards it, so a session filtered to one reader can never consume
+      // -- and permanently strand -- another reader's card.
+      subs.add(ccidSource.taggedTags(reader: filter._readerName).listen(
+            (tagged) => controller.add(tagged.driver),
+            onError: controller.addError,
+          ));
     }
   }
 

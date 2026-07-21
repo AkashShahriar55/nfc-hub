@@ -592,6 +592,102 @@ void main() {
     });
 
     test(
+        'a reader-filtered taggedTags(reader: A) listener does NOT consume '
+        "another reader's card: reader B's card is held for a LATER "
+        'unfiltered subscriber', () {
+      // Regression (final review, Finding 1): the old design marked
+      // `delivered` the moment ANY listener existed, then filtered
+      // downstream (in mergeTagStreams) -- so a session filtered to reader
+      // A silently consumed and discarded reader B's card, permanently.
+      FakeAsync().run((async) {
+        final platform = _FakePlatform()
+          ..readers = ['reader-A', 'reader-B']
+          ..cardsPresent.add('reader-B');
+        final source = CcidSource(platform);
+        addTearDown(source.dispose);
+
+        final filtered = <ReaderTaggedDriver>[];
+        final filteredSub =
+            source.taggedTags(reader: 'reader-A').listen(filtered.add);
+        async.elapse(const Duration(milliseconds: 1500));
+        expect(filtered, isEmpty,
+            reason: "reader B's card must not reach a reader-A filter");
+
+        // A later unfiltered subscriber must still receive B's card -- the
+        // filtered pipeline never consumed it.
+        final all = <TagDriver>[];
+        final allSub = source.tags().listen(all.add);
+        async.elapse(const Duration(milliseconds: 500));
+        expect(all, hasLength(1),
+            reason: "reader B's card was never delivered to any matching "
+                'listener, so it must be replayed to the first unfiltered '
+                'subscriber');
+        filteredSub.cancel();
+        allSub.cancel();
+      });
+    });
+
+    test(
+        'a reader-filtered taggedTags(reader: A) listener that DOES receive '
+        "reader A's card consumes it: a later unfiltered subscriber does "
+        'not get it again', () {
+      FakeAsync().run((async) {
+        final platform = _FakePlatform()
+          ..readers = ['reader-A']
+          ..cardsPresent.add('reader-A');
+        final source = CcidSource(platform);
+        addTearDown(source.dispose);
+
+        final filtered = <ReaderTaggedDriver>[];
+        final filteredSub =
+            source.taggedTags(reader: 'reader-A').listen(filtered.add);
+        async.elapse(const Duration(milliseconds: 500));
+        expect(filtered, hasLength(1));
+        expect(filtered.single.reader, 'reader-A');
+
+        final all = <TagDriver>[];
+        final allSub = source.tags().listen(all.add);
+        async.elapse(const Duration(milliseconds: 500));
+        expect(all, isEmpty,
+            reason: 'the card already reached the matching filtered '
+                'listener -- it must not be replayed to a later subscriber');
+        filteredSub.cancel();
+        allSub.cancel();
+      });
+    });
+
+    test(
+        'replay to a late reader-filtered subscriber only hands over the '
+        "matching reader's card, leaving the other held for its own "
+        'consumer', () {
+      FakeAsync().run((async) {
+        final platform = _FakePlatform()
+          ..readers = ['reader-A', 'reader-B']
+          ..cardsPresent.addAll(['reader-A', 'reader-B']);
+        final source = CcidSource(platform);
+        addTearDown(source.dispose);
+
+        // Only the loop-driving readerStates listener exists at identify
+        // time -- both cards end up held and undelivered.
+        source.readerStates().listen((_) {});
+        async.elapse(const Duration(milliseconds: 500));
+
+        final filtered = <ReaderTaggedDriver>[];
+        source.taggedTags(reader: 'reader-A').listen(filtered.add);
+        async.flushMicrotasks();
+        expect(filtered, hasLength(1));
+        expect(filtered.single.reader, 'reader-A');
+
+        // Reader B's held card was NOT consumed by the reader-A replay scan.
+        final late = <ReaderTaggedDriver>[];
+        source.taggedTags().listen(late.add);
+        async.flushMicrotasks();
+        expect(late, hasLength(1));
+        expect(late.single.reader, 'reader-B');
+      });
+    });
+
+    test(
         "tick overlap guard: a tick whose async work outlives one poll "
         'interval is not double-run by an overlapping tick -- the reader '
         'is connected and emitted exactly once', () {
