@@ -244,6 +244,39 @@ void main() {
     expect(events, ['start:A', 'end:A', 'start:B', 'end:B']);
   });
 
+  test(
+      'an onDiscovered that throws (e.g. TagLostException mid-read) reports '
+      'the error to onError, and the session still delivers the next tag',
+      () async {
+    // Regression (final review, Finding 3): the serialization chain's catch
+    // swallowed everything onDiscovered threw -- including TagLostException
+    // when the tag left the field mid-read -- despite the documented promise
+    // that onError sees per-tap failures.
+    final hub = _FakeNfcHub();
+    final reader = NfcHubReader.forTesting(hub);
+    final errors = <Object>[];
+    final seen = <String>[];
+
+    reader.startSession(
+      onDiscovered: (tag) async {
+        final name = (tag as _FakeTag).name;
+        if (name == 'A') {
+          throw const TagLostException('tag left the field mid-read');
+        }
+        seen.add(name);
+      },
+      onError: errors.add,
+    );
+    hub.tagController.add(_FakeTag('A'));
+    hub.tagController.add(_FakeTag('B'));
+    await pumpEventQueue();
+
+    expect(errors, hasLength(1));
+    expect(errors.single, isA<TagLostException>());
+    expect(seen, ['B'],
+        reason: 'the session must survive the throwing callback');
+  });
+
   test('a throwing onDiscovered does not stop later deliveries', () async {
     final hub = _FakeNfcHub();
     final reader = NfcHubReader.forTesting(hub);

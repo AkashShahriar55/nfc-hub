@@ -444,14 +444,19 @@ class CcidSource implements TagSource {
       _liveTaggedController.add(ReaderTaggedDriver(reader, driver));
     } catch (error, stackTrace) {
       // Connected but couldn't identify the card -- keep the reader marked
-      // occupied (a card IS physically seated); log and move on, same as
-      // AndroidNfcSource does for one bad discovery.
+      // occupied (a card IS physically seated) and keep the loop going, but
+      // surface the failure to tags()/taggedTags() consumers as a stream
+      // error (matching AndroidNfcSource, which addErrors on a discovery it
+      // cannot identify): the README error contract promises onError sees
+      // "a tag that connects but fails identification". Errors are not
+      // held/replayed -- with nobody listening, only the log remains.
       developer.log(
         'Failed to identify tag on reader "$reader": $error',
         name: 'nfc_hub.CcidSource',
         error: error,
         stackTrace: stackTrace,
       );
+      _taggedTagsController?.addError(error, stackTrace);
     }
     return true;
   }

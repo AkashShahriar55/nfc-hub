@@ -36,6 +36,13 @@ class _FakePlatform extends NfcHubPlatform {
   /// without an intervening empty tick. Defaults to '9000' for a seated card.
   final Map<String, String> cardUid = {};
 
+  /// Readers holding a card that connects but cannot be identified: connect()
+  /// succeeds with an ATR-less [CcidCard], and every transceive throws -- so
+  /// `identifyTag`'s probing chain deterministically ends in
+  /// [UnrecognizedTagException]. Requires `NfcHubPlatform.instance` to be set
+  /// to this fake, since the probes go through [CcidCard.transceive].
+  final Set<String> muteCards = {};
+
   final List<String> listReadersLog = [];
   final List<String> connectLog = [];
   final List<String> transceiveLog = [];
@@ -60,6 +67,7 @@ class _FakePlatform extends NfcHubPlatform {
   @override
   Future<CcidCard> connect(String reader) async {
     connectLog.add(reader);
+    if (muteCards.contains(reader)) return CcidCard(reader); // no ATR
     if (!cardsPresent.contains(reader)) {
       throw Exception('no card seated in $reader');
     }
@@ -588,6 +596,45 @@ void main() {
         async.elapse(const Duration(milliseconds: 500));
         expect(a.length + b.length, 1,
             reason: 'held driver replays to exactly one listener');
+      });
+    });
+
+    test(
+        'a card that connects but fails identification surfaces the error '
+        "on the listener's onError, and the stream stays alive: a good "
+        'card on another reader still delivers', () {
+      // Regression (final review, Finding 2): the identify catch only
+      // developer.log'ed, so an unidentifiable seated card was invisible to
+      // the app -- contradicting the README error contract ("onError
+      // receives ... a tag that connects but fails identification").
+      FakeAsync().run((async) {
+        final platform = _FakePlatform()
+          ..readers = ['reader-mute']
+          ..muteCards.add('reader-mute');
+        NfcHubPlatform.instance = platform;
+        addTearDown(() => NfcHubPlatform.instance = null);
+        final source = CcidSource(platform);
+        addTearDown(source.dispose);
+
+        final drivers = <TagDriver>[];
+        final errors = <Object>[];
+        final taggedErrors = <Object>[];
+        source.tags().listen(drivers.add, onError: errors.add);
+        source.taggedTags().listen((_) {}, onError: taggedErrors.add);
+
+        async.elapse(const Duration(milliseconds: 500));
+        expect(errors, hasLength(1));
+        expect(errors.single, isA<UnrecognizedTagException>());
+        expect(taggedErrors, hasLength(1),
+            reason: 'taggedTags() consumers must receive the error too');
+        expect(drivers, isEmpty);
+
+        // The stream survived: a good card on another reader still delivers.
+        platform.readers = ['reader-mute', 'reader-good'];
+        platform.cardsPresent.add('reader-good');
+        async.elapse(const Duration(milliseconds: 500));
+        expect(drivers, hasLength(1));
+        expect(drivers.single, isA<Type2Tag>());
       });
     });
 

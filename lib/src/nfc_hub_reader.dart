@@ -87,7 +87,9 @@ class NfcHubReader {
   /// Future it is awaited before the next tag is delivered, so reads on one tag
   /// never overlap the next (important for the single-threaded CCID reader). A
   /// throwing/failing [onDiscovered] is isolated — it does not tear down the
-  /// session. [onError], if given, receives stream errors — this now
+  /// session, and whatever it threw (e.g. a `TagLostException` when the tag
+  /// leaves the field mid-read) is reported to this session's [onError].
+  /// [onError], if given, also receives stream errors — this
   /// includes per-tap failures (e.g. an unreadable/unrecognized tag, or a
   /// tag that connects but fails identification), not just connection-level
   /// errors: the session survives these and keeps delivering later taps. If
@@ -115,8 +117,14 @@ class NfcHubReader {
         _chain = _chain.then((_) async {
           try {
             await onDiscovered(tag);
-          } catch (_) {
-            // A throwing callback must not break the session or the chain.
+          } catch (error) {
+            // A throwing callback must not break the session or the chain --
+            // but the app must still hear about it (e.g. TagLostException
+            // mid-read), so report it to THIS session's onError. `onError`
+            // is the startSession parameter captured by this closure: if the
+            // session has since been replaced, an in-flight read still
+            // reports to the session it belonged to, which is correct.
+            onError?.call(error);
           }
         });
       },
