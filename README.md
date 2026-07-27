@@ -16,7 +16,7 @@ Not yet published to pub.dev — depend on it via git:
 dependencies:
   nfc_hub:
     git:
-      url: git@github.com:CHEQPlease/nfc-ccid.git
+      url: git@github.com:AkashShahriar55/nfc-hub.git
       ref: master   # or pin a tag/commit for reproducible builds
 ```
 

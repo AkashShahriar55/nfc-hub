@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import 'log.dart';
 import 'nfc_hub_api.dart';
 import 'platform/android_nfc_manager.dart';
 import 'platform/platform_interface.dart';
@@ -40,6 +41,41 @@ class NfcHub {
 
   CcidSource get _readerSource =>
       _ccidSource ??= CcidSource(NfcHubPlatform.instance);
+
+  /// Turns nfc_hub's diagnostic logging on or off — both halves, Dart and
+  /// native — in one call.
+  ///
+  /// [enabled] gates the event trace: poll-loop lifecycle, reader attach and
+  /// detach, card insert and removal, connect/identify outcomes. Roughly a
+  /// line per event. This is what you want when a card isn't being detected
+  /// and you need to know how far it got.
+  ///
+  /// [verbose] additionally dumps every CCID USB frame on the native side —
+  /// raw bulk-in/out hex and decoded `RDR_to_PC` headers. This is a firehose:
+  /// the poll loop probes twice a second at ~5 lines each, so an idle reader
+  /// produces well over a thousand lines a minute. Leave it off unless you
+  /// need to see the wire. It has no effect when [enabled] is false.
+  ///
+  /// Errors are always logged, at any setting.
+  ///
+  /// Call it once at startup, before anything begins polling:
+  ///
+  /// ```dart
+  /// await NfcHub().setLogging(enabled: true);              // events only
+  /// await NfcHub().setLogging(enabled: true, verbose: true); // + USB frames
+  /// await NfcHub().setLogging(enabled: false);             // silence
+  /// ```
+  ///
+  /// Safe to call at any time — settings apply to subsequent logging, and a
+  /// platform with no native half to configure ignores it.
+  Future<void> setLogging({bool enabled = true, bool verbose = false}) async {
+    nfcHubLogging = enabled;
+    nfcHubVerboseLogging = verbose;
+    await NfcHubPlatform.instance.setLogging(
+      enabled: enabled,
+      verbose: verbose,
+    );
+  }
 
   /// List available readers
   ///

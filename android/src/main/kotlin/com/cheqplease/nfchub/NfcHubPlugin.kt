@@ -33,6 +33,11 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     private lateinit var usbManager: UsbManager
     private var readers = mutableMapOf<String, Reader>()
 
+    // Last-logged USB topology / reader-name list, so listReaders() (called on
+    // every 500ms poll tick) only logs on change instead of every tick.
+    private var lastUsbSignature: String? = null
+    private var lastReaderNames: List<String>? = null
+
     // CCID USB I/O (iccPowerOn, xfrBlock, device close) is BLOCKING -- USB bulk
     // transfers with multi-second timeouts. Method-channel handlers run on the
     // main (platform) thread, so running these there janks/ANRs the UI once the
@@ -94,11 +99,21 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             if (intent.action == ACTION_USB_PERMISSION) {
                 synchronized(this) {
                     val device: UsbDevice? = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
-                    if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
+                    val granted =
+                        intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
+                    NfcHubLog.d(
+                        "USB permission result for \"${intent.getStringExtra("name")}\": " +
+                                "granted=$granted device=${device?.deviceName ?: "(missing)"}"
+                    )
+                    if (granted) {
                         device?.apply {
                             val reader = readers[intent.getStringExtra("name")]
                             if (reader == null) {
-                                Log.e(TAG, "Reader not found")
+                                NfcHubLog.e(
+                                    "Permission granted but reader " +
+                                            "\"${intent.getStringExtra("name")}\" is no longer " +
+                                            "tracked (known: ${readers.keys})"
+                                )
                                 return
                             }
                             // Blocking USB work off the main thread (same reason
@@ -121,7 +136,7 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                                         }
                                     }
                                 } catch (e: Throwable) {
-                                    Log.e(TAG, "CCID connect (post-permission) failed off-thread: ${e.message}", e)
+                                    NfcHubLog.e("CCID connect (post-permission) failed off-thread: ${e.message}", e)
                                     mainHandler.post {
                                         reader.result?.error("CCID_READER_CONNECT_ERROR", e.message, null)
                                     }
@@ -144,7 +159,10 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                             }
                         }
                     } else {
-                        Log.d(TAG, "permission denied for device $device")
+                        NfcHubLog.e(
+                            "USB permission DENIED for $device -- this reader will not be " +
+                                    "retried until it is unplugged and re-attached"
+                        )
                         val deniedName = intent.getStringExtra("name")
                         val reader = deniedName?.let { readers[it] }
                         val pending = reader?.result
@@ -175,7 +193,7 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                         readers.entries.removeIf { (_, reader) ->
                             reader.deviceName == detachedDevice.deviceName
                         }
-                        Log.d(TAG, "USB device detached: $detachedDevice")
+                        NfcHubLog.d("USB device detached: $detachedDevice")
                     }
                 }
             }
@@ -207,6 +225,24 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     @OptIn(ExperimentalStdlibApi::class)
     override fun onMethodCall(call: MethodCall, result: Result) {
         when (call.method) {
+            "setLogging" -> {
+                NfcHubLog.enabled = call.argument<Boolean>("enabled") ?: true
+                NfcHubLog.verbose = call.argument<Boolean>("verbose") ?: false
+                // Logged through Log directly, not NfcHubLog: a call that turns
+                // logging OFF must still leave a trace of when it happened,
+                // otherwise a silent log is indistinguishable from a dead one.
+                Log.i(
+                    NfcHubLog.TAG,
+                    "setLogging: enabled=${NfcHubLog.enabled} verbose=${NfcHubLog.verbose}"
+                )
+                // Re-log the USB topology on the next tick. Both caches suppress
+                // repeats, so enabling logging mid-session would otherwise show
+                // polling activity with no baseline of what is actually attached.
+                lastUsbSignature = null
+                lastReaderNames = null
+                result.success(null)
+            }
+
             "listReaders" -> {
                 result.success(listReaders())
             }
@@ -221,11 +257,13 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 val capdu = call.argument<String>("capdu")!!
                 val reader = readers[name]
                 if (reader == null) {
+                    NfcHubLog.e("transceive on unknown reader \"$name\" (known: ${readers.keys})")
                     result.error("CCID_READER_NOT_FOUND", "Reader not found", null)
                     return
                 }
                 val ccid = reader.ccid
                 if (ccid == null) {
+                    NfcHubLog.e("transceive on \"$name\" but no card session is open")
                     result.error("CCID_READER_NOT_CONNECTED", "Reader not connected", null)
                     return
                 }
@@ -246,10 +284,10 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                         // Expected in normal operation (e.g. the liveness probe
                         // hitting a just-removed card) -- one debug line, no
                         // stack trace. The Dart side still gets the error reply.
-                        Log.d(TAG, "CCID transceive failed: ${e.message}")
+                        NfcHubLog.d("CCID transceive failed: ${e.message}")
                         mainHandler.post { result.error("CCID_TRANSCEIVE_ERROR", e.message, null) }
                     } catch (e: Throwable) {
-                        Log.e(TAG, "CCID transceive failed off-thread: ${e.message}", e)
+                        NfcHubLog.e("CCID transceive failed off-thread: ${e.message}", e)
                         mainHandler.post { result.error("CCID_TRANSCEIVE_ERROR", e.message, null) }
                     }
                 }
@@ -257,8 +295,10 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
 
             "disconnect" -> {
                 val name = call.arguments as String
+                NfcHubLog.v("disconnect(\"$name\")")
                 val reader = readers[name]
                 if (reader == null) {
+                    NfcHubLog.e("disconnect on unknown reader \"$name\" (known: ${readers.keys})")
                     result.error("CCID_READER_NOT_FOUND", "Reader not found", null)
                     return
                 }
@@ -278,7 +318,7 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                     } catch (e: Throwable) {
                         // Must still complete `result` -- an orphaned Result here
                         // hangs the poll loop's disconnect await (see transceive).
-                        Log.e(TAG, "CCID disconnect failed off-thread: ${e.message}", e)
+                        NfcHubLog.e("CCID disconnect failed off-thread: ${e.message}", e)
                         mainHandler.post { result.error("CCID_DISCONNECT_ERROR", e.message, null) }
                     }
                 }
@@ -378,6 +418,13 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
         context = binding.activity.applicationContext
         usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
+        // Until this fires, `usbManager` is an uninitialized lateinit and every
+        // listReaders() throws -- so "no readers, no logs" and "plugin never
+        // attached to an activity" look identical from Dart. Mark the boundary.
+        NfcHubLog.d(
+            "onAttachedToActivity: UsbManager ready, USB receivers registered " +
+                    "(package=${context.packageName}, sdk=${Build.VERSION.SDK_INT})"
+        )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             context.registerReceiver(
                 usbReceiver, IntentFilter(ACTION_USB_PERMISSION), Context.RECEIVER_EXPORTED
@@ -438,7 +485,57 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         val readerTree = mutableMapOf<String, MutableList<Reader>>()
         val newReaders = mutableMapOf<String, Reader>()
 
-        usbManager.deviceList.values.forEach { device ->
+        val deviceList = usbManager.deviceList
+        // listReaders() runs on every poll tick (2x/s). Dumping the full USB
+        // topology each time would bury everything else, so only log it when
+        // the set of attached devices actually changes -- which is exactly when
+        // it's interesting (plug/unplug, or a reader that never shows up at all).
+        val signature = deviceList.values.joinToString(",") {
+            "${it.deviceName}:${it.vendorId}:${it.productId}"
+        }
+        if (signature != lastUsbSignature) {
+            lastUsbSignature = signature
+            NfcHubLog.d("USB enumeration: ${deviceList.size} device(s) visible")
+            deviceList.values.forEach { device ->
+                NfcHubLog.d(
+                    "  %s vid=0x%04X pid=0x%04X product=%s manufacturer=%s interfaces=%d".format(
+                        device.deviceName,
+                        device.vendorId,
+                        device.productId,
+                        device.productName ?: "(null)",
+                        device.manufacturerName ?: "(null)",
+                        device.interfaceCount
+                    )
+                )
+                (0 until device.interfaceCount).forEach { i ->
+                    val usbInterface = device.getInterface(i)
+                    NfcHubLog.d(
+                        "    if[%d] class=0x%02X subclass=0x%02X protocol=0x%02X endpoints=%d name=%s -> %s".format(
+                            i,
+                            usbInterface.interfaceClass,
+                            usbInterface.interfaceSubclass,
+                            usbInterface.interfaceProtocol,
+                            usbInterface.endpointCount,
+                            usbInterface.name ?: "(null)",
+                            if (usbInterface.interfaceClass == UsbConstants.USB_CLASS_CSCID) {
+                                "CCID (0x0B) -- usable"
+                            } else {
+                                "not CCID, ignored"
+                            }
+                        )
+                    )
+                }
+                NfcHubLog.d("  permission held for ${device.deviceName}: ${usbManager.hasPermission(device)}")
+            }
+            if (deviceList.isEmpty()) {
+                NfcHubLog.e(
+                    "No USB devices visible at all. Either the reader is not " +
+                            "enumerating (cable/OTG/power), or this build lacks USB host access."
+                )
+            }
+        }
+
+        deviceList.values.forEach { device ->
             (0 until device.interfaceCount).forEach { i ->
                 val usbInterface = device.getInterface(i)
                 if (usbInterface.interfaceClass == UsbConstants.USB_CLASS_CSCID) {
@@ -466,17 +563,25 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         }
 
         readers = newReaders
-        return readers.keys.toList()
+        val names = readers.keys.toList()
+        if (names != lastReaderNames) {
+            lastReaderNames = names
+            NfcHubLog.d("listReaders -> $names")
+        }
+        return names
     }
 
     @OptIn(ExperimentalStdlibApi::class)
     private fun connect(name: String, result: Result) {
+        NfcHubLog.v("connect(\"$name\")")
         val reader = readers[name]
         if (reader == null) {
+            NfcHubLog.e("connect(\"$name\"): not in readers map (known: ${readers.keys})")
             result.error("CCID_READER_NOT_FOUND", "Reader not found", null)
             return
         }
         if (reader.result != null) {
+            NfcHubLog.d("connect(\"$name\"): a USB permission request is already pending")
             // A permission request is already in flight for this reader; completing
             // a second one would orphan the first (a Result that never completes
             // hangs the Dart-side await forever -- see CcidSource's poll loop).
@@ -490,16 +595,25 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         val device =
             usbManager.deviceList.filter { it.key == reader.deviceName }.values.firstOrNull()
         if (device == null) {
+            NfcHubLog.e(
+                "connect(\"$name\"): USB device ${reader.deviceName} is gone from " +
+                        "deviceList (now: ${usbManager.deviceList.keys})"
+            )
             result.error("CCID_READER_NOT_FOUND", "Reader not found", null)
             return
         }
 
         if (reader.ccid != null) {
+            NfcHubLog.d("connect(\"$name\"): already connected (a card session is open)")
             result.error("CCID_READER_ALREADY_CONNECTED", "Reader already connected", null)
             return
         }
 
         if (!usbManager.hasPermission(device)) {
+            NfcHubLog.d(
+                "connect(\"$name\"): no USB permission -- showing the OS dialog. " +
+                        "Nothing can be read until it is granted."
+            )
             // Request permission
             readers[name] = reader.copy(result = result)
             val intent = Intent(ACTION_USB_PERMISSION)
@@ -533,7 +647,7 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 } catch (e: Throwable) {
                     // Must still complete `result` -- an orphaned Result here hangs
                     // the poll loop's connect await (see transceive).
-                    Log.e(TAG, "CCID connect failed off-thread: ${e.message}", e)
+                    NfcHubLog.e("CCID connect failed off-thread: ${e.message}", e)
                     mainHandler.post { result.error("CCID_READER_CONNECT_ERROR", e.message, null) }
                 }
             }
@@ -542,23 +656,41 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
 
     @OptIn(ExperimentalStdlibApi::class)
     private fun connectToInterface(device: UsbDevice, interfaceIdx: Int): Pair<Ccid, ByteArray>? {
+        NfcHubLog.v("connectToInterface(${device.deviceName}, if=$interfaceIdx)")
         val usbInterface = device.getInterface(interfaceIdx)
         val usbConnection = usbManager.openDevice(device)
         if (usbConnection == null) {
-            Log.e(TAG, "Failed to open device")
+            NfcHubLog.e(
+                "openDevice(${device.deviceName}) returned null -- permission revoked, " +
+                        "or the device is claimed by another process/driver"
+            )
             return null
         }
         var success = false
         return try {
             val endpoints = getEndpoints(usbInterface)
+            NfcHubLog.v(
+                "  endpoints: bulkIn addr=0x%02X max=%dB, bulkOut addr=0x%02X max=%dB".format(
+                    endpoints.first.address,
+                    endpoints.first.maxPacketSize,
+                    endpoints.second.address,
+                    endpoints.second.maxPacketSize
+                )
+            )
             val ccid = Ccid(usbConnection, endpoints.first, endpoints.second)
             val descriptor = ccid.getDescriptor(interfaceIdx)
             if (descriptor?.supportsProtocol(Protocol.T1) != true) {
-                Log.d(TAG, "Unsupported protocol")
+                NfcHubLog.e(
+                    "Unsupported protocol: descriptor=$descriptor -- T=1 not advertised, " +
+                            "so this reader is rejected before any card is ever powered on"
+                )
                 return null
             }
             if (!usbConnection.claimInterface(usbInterface, true)) {
-                Log.e(TAG, "Failed to claim interface")
+                NfcHubLog.e(
+                    "claimInterface(if=$interfaceIdx) failed -- another process (or a " +
+                            "leaked connection from a previous attempt) still holds it"
+                )
                 return null
             }
             val atr = ccid.iccPowerOn()
@@ -570,19 +702,19 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             // treat it as "no card" here -- otherwise the Dart poll loop sees a
             // phantom card and spins a connect/identify-fail/disconnect loop.
             if (atr.size < 5) {
-                Log.d(TAG, "Degenerate ATR ${atr.toHexString()} -- no card present")
+                NfcHubLog.v("Degenerate ATR ${atr.toHexString()} -- no card present")
                 return null
             }
-            Log.d(TAG, "ATR: ${atr.toHexString()}")
+            NfcHubLog.d("CARD DETECTED on ${device.deviceName} if=$interfaceIdx, ATR: ${atr.toHexString()}")
             success = true
             Pair(ccid, atr)
         } catch (e: CcidException) {
             // Expected on every poll tick of an empty reader (no card answers
-            // power-on) -- debug, not error, and no stack trace.
-            Log.d(TAG, "No card / power-on failed: ${e.message}")
+            // power-on) -- verbose, not error, and no stack trace.
+            NfcHubLog.v("No card / power-on failed: ${e.message}")
             null
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to connect to interface: ${e.message}")
+            NfcHubLog.e("Failed to connect to interface: ${e.message}", e)
             null
         } finally {
             // Release the USB connection on EVERY failure path. The auto-detect
@@ -612,6 +744,10 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             }
         }
         if (bulkIn == null || bulkOut == null) {
+            NfcHubLog.e(
+                "Bulk endpoints not found on interface ${usbInterface.id} " +
+                        "(${usbInterface.endpointCount} endpoint(s): bulkIn=$bulkIn bulkOut=$bulkOut)"
+            )
             throw Exception("Bulk endpoints not found")
         }
         return Pair(bulkIn, bulkOut)
@@ -635,7 +771,6 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     }
 
     companion object {
-        private val TAG = FlutterPlugin::class.java.name
         private const val ACTION_USB_PERMISSION = "com.cheqplease.nfchub.USB_PERMISSION"
     }
 
