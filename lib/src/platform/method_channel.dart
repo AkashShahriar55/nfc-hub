@@ -39,4 +39,15 @@ class MethodChannelNfcHub extends NfcHubPlatform {
   Future<void> disconnect(String reader) {
     return methodChannel.invokeMethod('disconnect', reader);
   }
+
+  @override
+  Future<void> setLogging({
+    required bool enabled,
+    required bool verbose,
+  }) async {
+    await methodChannel.invokeMethod<void>('setLogging', <String, dynamic>{
+      'enabled': enabled,
+      'verbose': verbose,
+    });
+  }
 }

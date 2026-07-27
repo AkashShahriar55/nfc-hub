@@ -72,6 +72,7 @@ class _HarnessHomeState extends State<HarnessHome> {
   /// become unhandled zone errors. The subscription itself survives; later
   /// taps keep arriving.
   void _onTagError(Object error) {
+    nfcLog('harness: tag stream error: $error', error: error);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Could not read tag: $error')),
@@ -79,13 +80,16 @@ class _HarnessHomeState extends State<HarnessHome> {
   }
 
   Future<void> _onTag(TagDriver driver) async {
+    nfcLog('harness: tag received from stream: ${driver.runtimeType}');
     // Phase 1: identify quickly so the row appears with its technology + UID.
     TagInfo? info;
     Object? infoError;
     try {
       info = await driver.readTagInfo();
+      nfcLog('harness: readTagInfo -> ${info.technology}');
     } catch (e) {
       infoError = e;
+      nfcLog('harness: readTagInfo failed: $e', error: e);
     }
     if (!mounted) return;
     final entry = _TagEntry(driver: driver, info: info, infoError: infoError);

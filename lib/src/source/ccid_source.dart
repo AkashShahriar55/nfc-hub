@@ -1,8 +1,8 @@
 import 'dart:async';
-import 'dart:developer' as developer;
 
 import 'package:flutter/services.dart';
 
+import '../log.dart';
 import '../nfc_hub_base.dart';
 import '../platform/platform_interface.dart';
 import '../tag/detection.dart';
@@ -189,6 +189,17 @@ class CcidSource implements TagSource {
   int _listenerCount = 0;
   bool _ticking = false;
 
+  /// Diagnostic counters: [_tickCount] drives the poll-loop heartbeat log,
+  /// [_skippedTicks] counts consecutive ticks dropped because the previous
+  /// one was still in flight (a wedged platform call).
+  int _tickCount = 0;
+  int _skippedTicks = 0;
+
+  /// Last connect-failure message logged per reader. An empty reader fails
+  /// connect() on EVERY tick, so the message is logged only when it changes
+  /// -- one line per distinct failure mode instead of two per second.
+  final Map<String, String> _lastConnectFailure = {};
+
   final Map<String, _ReaderStatus> _status = {};
 
   /// The [_HeldDriver] for every currently-**occupied** reader, keyed by
@@ -306,7 +317,10 @@ class CcidSource implements TagSource {
   void _onListen() {
     _listenerCount++;
     if (_listenerCount == 1) {
+      nfcLog('poll loop STARTED (interval $pollInterval)');
       _timer = Timer.periodic(pollInterval, (_) => unawaited(_tick()));
+    } else {
+      nfcLog('poll loop: listener added (now $_listenerCount)');
     }
   }
 
@@ -314,24 +328,44 @@ class CcidSource implements TagSource {
     _listenerCount--;
     if (_listenerCount <= 0) {
       _listenerCount = 0;
+      nfcLog('poll loop STOPPED (last listener cancelled)');
       _timer?.cancel();
       _timer = null;
+    } else {
+      nfcLog('poll loop: listener removed (now $_listenerCount)');
     }
   }
 
   Future<void> _tick() async {
     // A previous tick may still be in flight (e.g. a slow connect()) --
     // never run two ticks concurrently against the same reader state.
-    if (_ticking) return;
+    if (_ticking) {
+      // Sustained repeats here mean a platform call never completed: the loop
+      // is wedged and NO card will ever be detected until it unblocks.
+      _skippedTicks++;
+      if (_skippedTicks == 1 || _skippedTicks % 20 == 0) {
+        nfcLog('tick SKIPPED -- previous tick still in flight '
+            '(x$_skippedTicks, ~${_skippedTicks * pollInterval.inMilliseconds}ms)');
+      }
+      return;
+    }
+    _skippedTicks = 0;
     _ticking = true;
+    _tickCount++;
+    // Heartbeat: proof the loop is alive, plus the current per-reader state,
+    // without logging all of it 2x/second.
+    if (_tickCount % 20 == 1) {
+      nfcLog('tick #$_tickCount: status=$_status '
+          'occupied=${_occupiedDrivers.keys.toList()} '
+          'permissionDenied=${_permissionDenied.toList()}');
+    }
     try {
       await _pollOnce();
     } catch (error, stackTrace) {
       // Never let one bad poll tear down the timer -- log and try again
       // next tick, mirroring AndroidNfcSource's per-discovery isolation.
-      developer.log(
+      nfcLog(
         'CcidSource poll tick failed: $error',
-        name: 'nfc_hub.CcidSource',
         error: error,
         stackTrace: stackTrace,
       );
@@ -345,9 +379,8 @@ class CcidSource implements TagSource {
     try {
       readers = await _platform.listReaders();
     } catch (error, stackTrace) {
-      developer.log(
+      nfcLog(
         'listReaders() failed: $error',
-        name: 'nfc_hub.CcidSource',
         error: error,
         stackTrace: stackTrace,
       );
@@ -362,8 +395,11 @@ class CcidSource implements TagSource {
         _status.keys.where((r) => !readerSet.contains(r)).toList();
     for (final reader in vanished) {
       final wasOccupied = _status[reader] == _ReaderStatus.occupied;
+      nfcLog('reader "$reader": VANISHED from listReaders (was '
+          '${wasOccupied ? 'occupied' : 'empty'}) -- dropping tracking');
       _status.remove(reader);
       _permissionDenied.remove(reader);
+      _lastConnectFailure.remove(reader);
       changed = true;
       // The reader itself is gone, so any connection held for its card is
       // no longer reachable through it -- release the handle rather than
@@ -384,6 +420,7 @@ class CcidSource implements TagSource {
     // Start tracking newly-seen readers as empty.
     for (final reader in readers) {
       if (!_status.containsKey(reader)) {
+        nfcLog('reader "$reader": now tracked (empty)');
         _status[reader] = _ReaderStatus.empty;
         changed = true;
       }
@@ -410,11 +447,22 @@ class CcidSource implements TagSource {
     try {
       card = await _platform.connect(reader);
     } on PlatformException catch (e) {
-      if (e.code == 'CCID_PERMISSION_DENIED') _permissionDenied.add(reader);
+      if (e.code == 'CCID_PERMISSION_DENIED') {
+        _permissionDenied.add(reader);
+        nfcLog('reader "$reader": USB PERMISSION DENIED -- connect() will not '
+            'be retried until the reader is re-attached');
+        return false;
+      }
+      // "No card seated" is indistinguishable from a real failure here without
+      // the code+message, and this fires every tick -- so log on change only.
+      _logConnectFailure(reader, '${e.code}: ${e.message}');
       return false;
-    } catch (_) {
+    } catch (error) {
+      _logConnectFailure(reader, '$error');
       return false; // No card seated yet -- stays empty, nothing to report.
     }
+    _lastConnectFailure.remove(reader);
+    nfcLog('reader "$reader": CONNECTED, atr=${card.atr}');
 
     _status[reader] = _ReaderStatus.occupied;
     // Share one clock between this card and the source, so lastActivity
@@ -432,11 +480,15 @@ class CcidSource implements TagSource {
     // transceive already in flight on this card.
     try {
       _occupiedUid[reader] = await card.transceive(_probeApdu) ?? '';
-    } catch (_) {
+      nfcLog('reader "$reader": Get-UID baseline = ${_occupiedUid[reader]}');
+    } catch (error) {
       _occupiedUid[reader] = ''; // card doesn't answer the probe (e.g. Type B)
+      nfcLog('reader "$reader": Get-UID probe unanswered ($error) -- '
+          'falling back to presence-only removal detection');
     }
     try {
       final driver = await identifyTag(card);
+      nfcLog('reader "$reader": IDENTIFIED as ${driver.runtimeType}');
       _occupiedDrivers[reader] = _HeldDriver(driver);
       // ALWAYS emit on the one shared live pipeline. Each tags()/taggedTags()
       // subscription that actually forwards this event to its consumer marks
@@ -453,9 +505,8 @@ class CcidSource implements TagSource {
       // cannot identify): the README error contract promises onError sees
       // "a tag that connects but fails identification". Errors are not
       // held/replayed -- with nobody listening, only the log remains.
-      developer.log(
+      nfcLog(
         'Failed to identify tag on reader "$reader": $error',
-        name: 'nfc_hub.CcidSource',
         error: error,
         stackTrace: stackTrace,
       );
@@ -489,18 +540,32 @@ class CcidSource implements TagSource {
       response = card == null
           ? await _platform.transceive(reader, _probeApdu)
           : await card.transceive(_probeApdu);
-    } catch (_) {
+    } catch (error) {
       // Nothing answers the probe -- the card was removed.
+      nfcLog('reader "$reader": liveness probe failed ($error) -- card removed');
       await _markCardGone(reader);
       return false;
     }
     final baseline = _occupiedUid[reader];
     if (baseline != null && baseline.isNotEmpty && response != baseline) {
       // A DIFFERENT card is now seated (its Get-UID response changed).
+      nfcLog('reader "$reader": UID changed ($baseline -> $response) -- '
+          'a different card was swapped in');
       await _markCardGone(reader);
       return false;
     }
     return true;
+  }
+
+  /// Logs a connect() failure for [reader] only when its message differs from
+  /// the last one logged for that reader -- an empty reader produces the same
+  /// failure on every 500ms tick, and logging all of them buries everything
+  /// else.
+  void _logConnectFailure(String reader, String message) {
+    if (_lastConnectFailure[reader] == message) return;
+    _lastConnectFailure[reader] = message;
+    nfcLog('reader "$reader": connect() failed -- $message '
+        '(expected while no card is seated; repeats are not logged)');
   }
 
   /// Flips [reader] back to empty and releases its card: clears the held
@@ -509,6 +574,7 @@ class CcidSource implements TagSource {
   /// is already gone), then disconnects. The next tick re-detects whatever is
   /// present now.
   Future<void> _markCardGone(String reader) async {
+    nfcLog('reader "$reader": card GONE -- back to empty');
     _status[reader] = _ReaderStatus.empty;
     _occupiedDrivers.remove(reader);
     _occupiedCards.remove(reader);
@@ -523,9 +589,8 @@ class CcidSource implements TagSource {
     try {
       await _platform.disconnect(reader);
     } catch (error, stackTrace) {
-      developer.log(
+      nfcLog(
         'disconnect() failed for reader "$reader": $error',
-        name: 'nfc_hub.CcidSource',
         error: error,
         stackTrace: stackTrace,
       );
@@ -537,6 +602,10 @@ class CcidSource implements TagSource {
       for (final entry in _status.entries)
         ExternalReaderState(entry.key, entry.value == _ReaderStatus.occupied),
     ];
+    // This is what drives the status bar's filled/hollow dot. If the dot never
+    // fills, compare these lines against the connect() outcomes above.
+    nfcLog('emit readerStates: $states '
+        '(listeners: ${_statesController?.hasListener ?? false})');
     _statesController?.add(states);
   }
 
