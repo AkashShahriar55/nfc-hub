@@ -107,12 +107,17 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                     )
                     if (granted) {
                         device?.apply {
-                            val reader = readers[intent.getStringExtra("name")]
-                            if (reader == null) {
+                            // The map KEY, not Reader.name: listReaders() suffixes
+                            // duplicate display names ("ACR122U ... (1)", "(2)"),
+                            // so Reader.name does not round-trip to its own entry
+                            // when two identical readers are attached. connect()
+                            // put this exact key in the intent.
+                            val readerKey = intent.getStringExtra("name")
+                            val reader = readers[readerKey]
+                            if (readerKey == null || reader == null) {
                                 NfcHubLog.e(
-                                    "Permission granted but reader " +
-                                            "\"${intent.getStringExtra("name")}\" is no longer " +
-                                            "tracked (known: ${readers.keys})"
+                                    "Permission granted but reader \"$readerKey\" is no " +
+                                            "longer tracked (known: ${readers.keys})"
                                 )
                                 return
                             }
@@ -123,22 +128,43 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                                 try {
                                     val connected = connectToInterface(device, reader.interfaceIdx)
                                     mainHandler.post {
-                                        if (connected != null) {
-                                            val (ccid, atr) = connected
-                                            readers[reader.name] = reader.copy(ccid = ccid, result = null)
-                                            reader.result!!.success(atr.toHexString())
-                                        } else {
-                                            reader.result!!.error(
+                                        val pending = takePendingResult(readerKey)
+                                        if (connected == null) {
+                                            pending?.error(
                                                 "CCID_READER_CONNECT_ERROR",
                                                 "Failed to connect",
                                                 null
                                             )
+                                            return@post
                                         }
+                                        val (ccid, atr) = connected
+                                        val current = readers[readerKey]
+                                        if (current == null) {
+                                            // Detached while we were connecting: there is no
+                                            // reader left to own this session, and re-adding
+                                            // the entry would resurrect a device that is
+                                            // physically gone. Release it instead of leaking
+                                            // the USB handle.
+                                            NfcHubLog.d(
+                                                "Reader \"$readerKey\" vanished during " +
+                                                        "post-permission connect -- releasing the session"
+                                            )
+                                            ccidExecutor.execute { ccid.close() }
+                                            pending?.error(
+                                                "CCID_READER_DETACHED",
+                                                "Reader $readerKey detached while connecting",
+                                                null
+                                            )
+                                            return@post
+                                        }
+                                        readers[readerKey] = current.copy(ccid = ccid)
+                                        pending?.success(atr.toHexString())
                                     }
                                 } catch (e: Throwable) {
                                     NfcHubLog.e("CCID connect (post-permission) failed off-thread: ${e.message}", e)
                                     mainHandler.post {
-                                        reader.result?.error("CCID_READER_CONNECT_ERROR", e.message, null)
+                                        takePendingResult(readerKey)
+                                            ?.error("CCID_READER_CONNECT_ERROR", e.message, null)
                                     }
                                 }
                             }
@@ -147,16 +173,11 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                             // Look up the reader by name and complete its pending result
                             // so it doesn't hang the poll loop.
                             val grantedName = intent.getStringExtra("name")
-                            val reader = grantedName?.let { readers[it] }
-                            val pending = reader?.result
-                            if (reader != null && pending != null) {
-                                readers[reader.name] = reader.copy(result = null)
-                                pending.error(
-                                    "CCID_READER_CONNECT_ERROR",
-                                    "USB device missing from permission response",
-                                    null
-                                )
-                            }
+                            grantedName?.let { takePendingResult(it) }?.error(
+                                "CCID_READER_CONNECT_ERROR",
+                                "USB device missing from permission response",
+                                null
+                            )
                         }
                     } else {
                         NfcHubLog.e(
@@ -164,16 +185,11 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                                     "retried until it is unplugged and re-attached"
                         )
                         val deniedName = intent.getStringExtra("name")
-                        val reader = deniedName?.let { readers[it] }
-                        val pending = reader?.result
-                        if (reader != null && pending != null) {
-                            readers[reader.name] = reader.copy(result = null)
-                            pending.error(
-                                "CCID_PERMISSION_DENIED",
-                                "USB permission denied for reader ${reader.name}",
-                                null
-                            )
-                        }
+                        deniedName?.let { takePendingResult(it) }?.error(
+                            "CCID_PERMISSION_DENIED",
+                            "USB permission denied for reader $deniedName",
+                            null
+                        )
                     }
                 }
             }
@@ -181,15 +197,20 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 synchronized(this) {
                     val device: UsbDevice? = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
                     device?.let { detachedDevice ->
-                        readers.values
+                        // Materialize the names BEFORE completing anything:
+                        // takePendingResult writes back into `readers`, and
+                        // mutating the map while iterating its own values would
+                        // throw ConcurrentModificationException.
+                        val affected = readers.values
                             .filter { it.deviceName == detachedDevice.deviceName }
-                            .forEach { r ->
-                                r.result?.error(
-                                    "CCID_READER_DETACHED",
-                                    "Reader ${r.name} detached while a request was pending",
-                                    null
-                                )
-                            }
+                            .map { it.name }
+                        affected.forEach { name ->
+                            takePendingResult(name)?.error(
+                                "CCID_READER_DETACHED",
+                                "Reader $name detached while a request was pending",
+                                null
+                            )
+                        }
                         readers.entries.removeIf { (_, reader) ->
                             reader.deviceName == detachedDevice.deviceName
                         }
@@ -481,6 +502,29 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         nfcStateReceiverRegistered = true
     }
 
+    /// Takes the pending USB-permission [Result] for [name] OUT of [readers]
+    /// and returns it, leaving `result = null` behind. Returns null if there
+    /// was none, or if another path already took it.
+    ///
+    /// EVERY completion of a pending permission Result must go through this.
+    /// Completing one twice throws IllegalStateException("Reply already
+    /// submitted") from Flutter's messenger, which is FATAL on the main
+    /// thread -- that is exactly what a USB detach during a pending request
+    /// used to do. Leaving a completed Result in the map is just as bad
+    /// silently: connect() reads a non-null `result` as "a permission request
+    /// is still pending" and answers CCID_PERMISSION_PENDING forever, so the
+    /// reader never connects again and no card is ever detected.
+    ///
+    /// Take-and-clear is atomic here by thread confinement, not by locking:
+    /// broadcast receivers and mainHandler.post both run on the main thread,
+    /// so only one caller can ever observe a non-null `result`.
+    private fun takePendingResult(name: String): Result? {
+        val reader = readers[name] ?: return null
+        val pending = reader.result ?: return null
+        readers[name] = reader.copy(result = null)
+        return pending
+    }
+
     private fun listReaders(): List<String> {
         val readerTree = mutableMapOf<String, MutableList<Reader>>()
         val newReaders = mutableMapOf<String, Reader>()
@@ -636,13 +680,29 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 try {
                     val connected = connectToInterface(device, reader.interfaceIdx)
                     mainHandler.post {
-                        if (connected != null) {
-                            val (ccid, atr) = connected
-                            readers[name] = reader.copy(ccid = ccid)
-                            result.success(atr.toHexString())
-                        } else {
+                        if (connected == null) {
                             result.error("CCID_READER_CONNECT_ERROR", "Failed to connect", null)
+                            return@post
                         }
+                        val (ccid, atr) = connected
+                        val current = readers[name]
+                        if (current == null) {
+                            // Detached mid-connect. Writing the entry back would
+                            // resurrect a reader that is physically gone, and the
+                            // session would never be closed -- release it here.
+                            NfcHubLog.d(
+                                "Reader \"$name\" vanished during connect -- releasing the session"
+                            )
+                            ccidExecutor.execute { ccid.close() }
+                            result.error(
+                                "CCID_READER_DETACHED",
+                                "Reader $name detached while connecting",
+                                null
+                            )
+                            return@post
+                        }
+                        readers[name] = current.copy(ccid = ccid)
+                        result.success(atr.toHexString())
                     }
                 } catch (e: Throwable) {
                     // Must still complete `result` -- an orphaned Result here hangs
