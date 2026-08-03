@@ -25,6 +25,13 @@ identity, scope, and the absence of the scaffolding a public repository needs:
 6. **CI cannot pass and does not test.** `example-app.yaml` builds a 5-platform
    × 2-variant matrix (iOS, macOS, Linux, Windows) against an Android-only
    plugin, and never runs `flutter test` — the 257-test suite is unguarded.
+7. **The tree is unformatted and loses pub.dev points.** `dart format
+   --set-exit-if-changed lib/` — a command the current CI already runs —
+   fails on 10 of 30 files under the repo's pinned Flutter 3.38.3. A `pana`
+   baseline run scores **150/160**, losing 10 points in "Pass static analysis"
+   to that formatting plus info-level lints (e.g. a missing return type at
+   `lib/src/platform/pcsc.dart:15`). Every other category is already full
+   marks.
 
 ## Decisions
 
@@ -117,7 +124,24 @@ harness: auto-detect, dual-source connection status, per-family reads.
 - **`.github/ISSUE_TEMPLATE/feature_request.yml`** and **`config.yml`**.
 - **`.github/pull_request_template.md`**.
 
-## E. CI
+## E. Formatting and lint cleanup
+
+Prerequisite to CI being greenable, and worth 10 pub.dev points on its own.
+
+- Run `dart format .` across the repository. Under Flutter 3.38.3's tall-style
+  formatter this touches 10 files in `lib/`; the diff is mechanical and lands
+  as its own commit, separate from the rename, so neither review is polluted
+  by the other.
+- Fix the info-level lints `pana` counts beyond `flutter_lints` (the missing
+  return type at `lib/src/platform/pcsc.dart:15` and its siblings). The exact
+  set is enumerated during implementation by re-running `pana` after
+  formatting, since `pana` reports only the first two in its summary.
+- Fix the two analyzer infos in `example/test/mrt_transaction_test.dart`
+  (`depend_on_referenced_packages`, `prefer_const_declarations`).
+
+Target: `pana` 160/160.
+
+## F. CI
 
 `example-app.yaml` is replaced by an Android-only workflow with two jobs:
 
@@ -131,15 +155,15 @@ harness: auto-detect, dual-source connection status, per-family reads.
 `dart-lang/setup-dart`. It only becomes functional once automated publishing is
 enabled on pub.dev, which is only possible after the package exists there.
 
-## F. Verification and release boundary
+## G. Verification and release boundary
 
 Gates, each confirmed by running it:
 
 - `flutter test` — 257 tests, all passing (current baseline).
 - `dart analyze` — clean.
-- `dart format --set-exit-if-changed` — clean.
-- `flutter pub publish --dry-run` — 0 warnings.
-- `pana` — score reviewed, regressions from the current baseline explained.
+- `dart format --set-exit-if-changed` — clean (fails today; see section E).
+- `flutter pub publish --dry-run` — 0 warnings (already true today).
+- `pana` — 160/160, up from the 150/160 baseline measured on 2026-08-03.
 
 **Out of scope, by design.** `flutter pub publish` is not run here. The first
 publish claims the package name under the user's pub.dev account, requires
