@@ -1,0 +1,22 @@
+name: Feature request
+description: Suggest a new capability, tag family, or reader.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the use case rather than the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like nfc_hub to do?
+    validations:
+      required: true
+  - type: textarea
+    id: hardware
+    attributes:
+      label: Hardware involved
+      description: Reader model and tag family, if this is hardware-specific.
