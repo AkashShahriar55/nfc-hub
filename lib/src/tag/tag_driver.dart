@@ -6,8 +6,9 @@ import 'dart:typed_data';
 /// Each driver wraps a typed transport (see `../transport/transport.dart`)
 /// and exposes only the read operations that make sense for that tag
 /// family. Drivers are transport-agnostic: the same driver serves a card on
-/// a USB CCID reader and (from Plan 3) a tag on the device's own antenna.
+/// a USB CCID reader and a tag on the device's own antenna.
 abstract class TagDriver {
+  /// Creates a driver.
   const TagDriver();
 
   /// A generic identification summary for this tag: technology, UID, and
@@ -21,16 +22,23 @@ abstract class TagDriver {
 /// `MifareClassicInfo`, `FelicaInfo`, `IsoDepInfo`, `TypeBInfo`) add
 /// family-specific fields.
 abstract class TagInfo {
+  /// A readable name for the tag's technology.
   String get technology;
+
+  /// The tag's unique identifier.
   Uint8List get uid;
+
+  /// The card's ATR, or null on sources without one, such as built-in NFC.
   Uint8List? get atr;
 }
 
 /// Thrown by `identifyTag` when a connected card doesn't match any known
 /// tag family, whether via ATR matching or capability probing.
 class UnrecognizedTagException implements Exception {
+  /// A description of the failure.
   final String message;
 
+  /// Creates an exception with [message].
   const UnrecognizedTagException(this.message);
 
   @override

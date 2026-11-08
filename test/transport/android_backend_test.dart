@@ -82,7 +82,8 @@ void main() {
   // an actual platform.
   setUp(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(const MethodChannel('nfc_hub'), (_) async => null);
+        .setMockMethodCallHandler(
+            const MethodChannel('nfc_hub'), (_) async => null);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockStreamHandler(
       const EventChannel('nfc_hub/events'),
@@ -98,8 +99,7 @@ void main() {
   });
 
   group('Type2 transport', () {
-    test('readUid returns the discovery UID with no transceive call',
-        () async {
+    test('readUid returns the discovery UID with no transceive call', () async {
       final manager = _FakeAndroidNfcManager();
       final discovery =
           _discovery(uid: Uint8List.fromList([1, 2, 3, 4, 5, 6, 7]));
@@ -111,11 +111,12 @@ void main() {
       expect(manager.transceiveCalls, isEmpty);
     });
 
-    test('readCapabilityContainer sends 30 03 over NfcA and takes the first 4 bytes',
+    test(
+        'readCapabilityContainer sends 30 03 over NfcA and takes the first 4 bytes',
         () async {
       final manager = _FakeAndroidNfcManager()
-        ..transceiveResponse = Uint8List.fromList(List.filled(16, 0xAB)
-          ..setRange(0, 4, [0xE1, 0x10, 0x6D, 0x00]));
+        ..transceiveResponse = Uint8List.fromList(
+            List.filled(16, 0xAB)..setRange(0, 4, [0xE1, 0x10, 0x6D, 0x00]));
       final t = AndroidTransportBackend(manager, _discovery()).type2();
 
       final cc = await t.readCapabilityContainer();
@@ -123,7 +124,8 @@ void main() {
       expect(manager.transceiveCalls.length, 1);
       expect(manager.transceiveCalls.single.$1, 7);
       expect(manager.transceiveCalls.single.$2, 'NfcA');
-      expect(manager.transceiveCalls.single.$3, Uint8List.fromList([0x30, 0x03]));
+      expect(
+          manager.transceiveCalls.single.$3, Uint8List.fromList([0x30, 0x03]));
       expect(cc, Uint8List.fromList([0xE1, 0x10, 0x6D, 0x00]));
     });
 
@@ -137,15 +139,16 @@ void main() {
       expect(manager.transceiveCalls.length, 1);
       expect(manager.transceiveCalls.single.$1, 7);
       expect(manager.transceiveCalls.single.$2, 'NfcA');
-      expect(manager.transceiveCalls.single.$3, Uint8List.fromList([0x30, 0x04]));
+      expect(
+          manager.transceiveCalls.single.$3, Uint8List.fromList([0x30, 0x04]));
       expect(page.length, 16);
     });
 
     test('getVersion sends 60 over NfcA and returns the 8-byte response',
         () async {
       final manager = _FakeAndroidNfcManager()
-        ..transceiveResponse =
-            Uint8List.fromList([0x00, 0x04, 0x03, 0x01, 0x01, 0x00, 0x0B, 0x03]);
+        ..transceiveResponse = Uint8List.fromList(
+            [0x00, 0x04, 0x03, 0x01, 0x01, 0x00, 0x0B, 0x03]);
       final t = AndroidTransportBackend(manager, _discovery()).type2();
 
       final v = await t.getVersion();
@@ -211,7 +214,8 @@ void main() {
         atqa: Uint8List.fromList([0x00, 0x04]),
         sak: 0x08,
       );
-      final t = await AndroidTransportBackend(manager, discovery).mifareClassic();
+      final t =
+          await AndroidTransportBackend(manager, discovery).mifareClassic();
 
       expect(t.uid, Uint8List.fromList([1, 2, 3, 4]));
       expect(t.atqa, Uint8List.fromList([0x00, 0x04]));
@@ -219,12 +223,13 @@ void main() {
       expect(manager.transceiveCalls, isEmpty);
     });
 
-    test('authenticate(1, keyA, key) calls manager.mifareAuthenticate(h, 1, true, key)',
+    test(
+        'authenticate(1, keyA, key) calls manager.mifareAuthenticate(h, 1, true, key)',
         () async {
       final manager = _FakeAndroidNfcManager();
       final key = Uint8List.fromList([0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]);
-      final t = await AndroidTransportBackend(manager, _discovery())
-          .mifareClassic();
+      final t =
+          await AndroidTransportBackend(manager, _discovery()).mifareClassic();
 
       await t.authenticate(1, MifareKeyType.a, key);
 
@@ -238,8 +243,8 @@ void main() {
     test('authenticate with keyB passes keyA=false', () async {
       final manager = _FakeAndroidNfcManager();
       final key = Uint8List.fromList([0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]);
-      final t = await AndroidTransportBackend(manager, _discovery())
-          .mifareClassic();
+      final t =
+          await AndroidTransportBackend(manager, _discovery()).mifareClassic();
 
       await t.authenticate(2, MifareKeyType.b, key);
 
@@ -250,13 +255,14 @@ void main() {
       expect(manager.mifareAuthCalls.single.$4, key);
     });
 
-    test('authenticate throws MifareAuthException when the manager rejects the key',
+    test(
+        'authenticate throws MifareAuthException when the manager rejects the key',
         () async {
       final manager = _FakeAndroidNfcManager()
-        ..mifareAuthError =
-            PlatformException(code: 'MIFARE_AUTH_FAILED', message: 'auth rejected');
-      final t = await AndroidTransportBackend(manager, _discovery())
-          .mifareClassic();
+        ..mifareAuthError = PlatformException(
+            code: 'MIFARE_AUTH_FAILED', message: 'auth rejected');
+      final t =
+          await AndroidTransportBackend(manager, _discovery()).mifareClassic();
 
       expect(
         () => t.authenticate(
@@ -265,13 +271,14 @@ void main() {
       );
     });
 
-    test('authenticate maps a TAG_LOST failure to TagLostException, not MifareAuthException',
+    test(
+        'authenticate maps a TAG_LOST failure to TagLostException, not MifareAuthException',
         () async {
       final manager = _FakeAndroidNfcManager()
         ..mifareAuthError =
             PlatformException(code: 'TAG_LOST', message: 'Tag was lost');
-      final t = await AndroidTransportBackend(manager, _discovery())
-          .mifareClassic();
+      final t =
+          await AndroidTransportBackend(manager, _discovery()).mifareClassic();
 
       expect(
         () => t.authenticate(
@@ -283,8 +290,8 @@ void main() {
     test('readBlock(b) calls manager.mifareReadBlock(h, b)', () async {
       final manager = _FakeAndroidNfcManager()
         ..mifareReadBlockResponse = Uint8List.fromList(List.filled(16, 0xCD));
-      final t = await AndroidTransportBackend(manager, _discovery())
-          .mifareClassic();
+      final t =
+          await AndroidTransportBackend(manager, _discovery()).mifareClassic();
 
       final block = await t.readBlock(5);
 
@@ -296,8 +303,8 @@ void main() {
       final manager = _FakeAndroidNfcManager()
         ..mifareReadBlockError =
             PlatformException(code: 'TAG_LOST', message: 'Tag was lost');
-      final t = await AndroidTransportBackend(manager, _discovery())
-          .mifareClassic();
+      final t =
+          await AndroidTransportBackend(manager, _discovery()).mifareClassic();
 
       expect(() => t.readBlock(5), throwsA(isA<TagLostException>()));
     });
@@ -311,8 +318,8 @@ void main() {
         ..transceiveResponse = Uint8List.fromList([0x00]);
       final t = AndroidTransportBackend(manager, _discovery()).nfcF();
 
-      final idm = Uint8List.fromList(
-          [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]);
+      final idm =
+          Uint8List.fromList([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]);
       final frame = Uint8List.fromList([0x0C, ...idm]);
 
       await t.transceive(frame);
@@ -352,7 +359,8 @@ void main() {
   });
 
   group('IsoDep transport', () {
-    test('transceive sends the APDU unchanged over IsoDep and returns the raw response WITH the SW',
+    test(
+        'transceive sends the APDU unchanged over IsoDep and returns the raw response WITH the SW',
         () async {
       final manager = _FakeAndroidNfcManager()
         ..transceiveResponse = Uint8List.fromList([0x6A, 0x82]);
@@ -402,8 +410,20 @@ void main() {
       final manager = _FakeAndroidNfcManager()
         ..transceiveResponse = Uint8List.fromList([0x90, 0x00]);
       final discovery = _discovery(
-          atqb: Uint8List.fromList(
-              [0x50, 0x11, 0x22, 0x33, 0x44, 0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03]));
+          atqb: Uint8List.fromList([
+        0x50,
+        0x11,
+        0x22,
+        0x33,
+        0x44,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x01,
+        0x02,
+        0x03
+      ]));
       final t = await AndroidTransportBackend(manager, discovery).nfcB();
       final apdu = Uint8List.fromList([0x00, 0xA4, 0x04, 0x00]);
 
@@ -416,11 +436,22 @@ void main() {
       expect(response, Uint8List.fromList([0x90, 0x00]));
     });
 
-    test('pupi/atqb come from the discovery with no transceive call',
-        () async {
+    test('pupi/atqb come from the discovery with no transceive call', () async {
       final manager = _FakeAndroidNfcManager();
-      final atqb = Uint8List.fromList(
-          [0x50, 0x11, 0x22, 0x33, 0x44, 0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03]);
+      final atqb = Uint8List.fromList([
+        0x50,
+        0x11,
+        0x22,
+        0x33,
+        0x44,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x01,
+        0x02,
+        0x03
+      ]);
       final discovery = _discovery(atqb: atqb);
       final t = await AndroidTransportBackend(manager, discovery).nfcB();
 
@@ -442,8 +473,20 @@ void main() {
         ..transceiveError =
             PlatformException(code: 'TAG_LOST', message: 'Tag was lost');
       final discovery = _discovery(
-          atqb: Uint8List.fromList(
-              [0x50, 0x11, 0x22, 0x33, 0x44, 0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03]));
+          atqb: Uint8List.fromList([
+        0x50,
+        0x11,
+        0x22,
+        0x33,
+        0x44,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x01,
+        0x02,
+        0x03
+      ]));
       final t = await AndroidTransportBackend(manager, discovery).nfcB();
 
       expect(() => t!.transceive(Uint8List.fromList([0x00])),

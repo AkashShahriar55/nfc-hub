@@ -5,6 +5,7 @@ import '../transport/transport.dart';
 import 'tag_driver.dart';
 import 'tag_info.dart';
 
+/// Identification details for an NFC Forum Type 2 tag.
 class Type2TagInfo implements TagInfo {
   @override
   final String technology;
@@ -12,8 +13,11 @@ class Type2TagInfo implements TagInfo {
   final Uint8List uid;
   @override
   final Uint8List? atr;
+
+  /// The tag's capability container, or null if it could not be read.
   final CapabilityContainer? capabilityContainer;
 
+  /// Creates an info record from its decoded fields.
   const Type2TagInfo({
     required this.technology,
     required this.uid,
@@ -25,12 +29,16 @@ class Type2TagInfo implements TagInfo {
 /// Driver for an NFC Forum Type 2 Tag (e.g. NTAG213/215/216, Mifare
 /// Ultralight) connected through a contactless PC/SC reader.
 class Type2Tag extends TagDriver {
+  /// The transport used to reach this tag.
   final Type2Transport transport;
 
   /// The card's ATR, where the source supplies one. Null on sources that
   /// have no ATR concept (the device's built-in NFC antenna).
   final Uint8List? atr;
 
+  /// Creates a driver over [transport].
+  ///
+  /// Apps receive drivers from nfc_hub rather than constructing them.
   const Type2Tag(this.transport, {this.atr});
 
   /// Reads the NDEF message from the tag.

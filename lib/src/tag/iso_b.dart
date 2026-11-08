@@ -5,6 +5,9 @@ import 'package:convert/convert.dart';
 import 'tag_driver.dart';
 import '../transport/transport.dart';
 
+/// Identification details for an ISO 14443-B tag.
+///
+/// For these tags, [uid] holds the PUPI.
 class TypeBInfo implements TagInfo {
   @override
   final String technology = 'ISO14443-B';
@@ -12,8 +15,11 @@ class TypeBInfo implements TagInfo {
   final Uint8List uid; // PUPI, 4 bytes
   @override
   final Uint8List? atr;
+
+  /// The card's ATQB response.
   final Uint8List atqb;
 
+  /// Creates an info record from its decoded fields.
   TypeBInfo({required this.uid, required this.atr, required this.atqb});
 }
 
@@ -23,16 +29,22 @@ class TypeBInfo implements TagInfo {
 /// (Type B isn't reachable through either of those). Exposes the card's
 /// ATQB plus raw ISO7816 APDU passthrough, mirroring [IsoDepTag]'s shape.
 class TypeBTag extends TagDriver {
+  /// The transport used to reach this tag.
   final NfcBTransport transport;
 
   /// The card's ATR, where the source supplies one. Null on sources that
   /// have no ATR concept (the device's built-in NFC antenna).
   final Uint8List? atr;
 
+  /// Creates a driver over [transport].
+  ///
+  /// Apps receive drivers from nfc_hub rather than constructing them.
   const TypeBTag(this.transport, {this.atr});
 
+  /// The card's ATQB response.
   Uint8List get atqb => transport.atqb;
 
+  /// Sends the hex-encoded APDU [capdu] and returns the hex-encoded response.
   Future<String?> transceive(String capdu) async {
     final response =
         await transport.transceive(Uint8List.fromList(hex.decode(capdu)));

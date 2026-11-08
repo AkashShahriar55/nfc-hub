@@ -19,7 +19,7 @@ class _FakeCcidPlatform extends NfcHubPlatform {
   Future<List<String>> listReaders() async => ['fake-reader'];
 
   @override
-  Future<CcidCard> connect(String reader) async => CcidCard(reader);
+  Future<ReaderCard> connect(String reader) async => ReaderCard(reader);
 
   @override
   Future<void> disconnect(String reader) async {}
@@ -51,9 +51,10 @@ void main() {
 
   group('transceiveChecked', () {
     test('returns the data bytes on a 9000 response', () async {
-      NfcHubPlatform.instance =
-          _FakeCcidPlatform({'00A4': '${hex.encode([0x01, 0x02])}9000'});
-      final card = CcidCard('fake-reader');
+      NfcHubPlatform.instance = _FakeCcidPlatform({
+        '00A4': '${hex.encode([0x01, 0x02])}9000'
+      });
+      final card = ReaderCard('fake-reader');
 
       final data = await transceiveChecked(card, '00A4');
 
@@ -61,23 +62,26 @@ void main() {
     });
 
     test('throws when the response has a non-9000 status word', () async {
-      NfcHubPlatform.instance =
-          _FakeCcidPlatform({'00A4': '${hex.encode([0x01])}6A82'});
-      final card = CcidCard('fake-reader');
+      NfcHubPlatform.instance = _FakeCcidPlatform({
+        '00A4': '${hex.encode([0x01])}6A82'
+      });
+      final card = ReaderCard('fake-reader');
 
       expect(() => transceiveChecked(card, '00A4'), throwsException);
     });
   });
 
   group('transceiveEscape', () {
-    test('wraps the payload in the FF 00 00 00 <Lc> escape command and '
+    test(
+        'wraps the payload in the FF 00 00 00 <Lc> escape command and '
         'returns the checked response', () async {
-      NfcHubPlatform.instance = _FakeCcidPlatform(
-          {'FF00000003AABBCC': '${hex.encode([0x01, 0x02])}9000'});
-      final card = CcidCard('fake-reader');
+      NfcHubPlatform.instance = _FakeCcidPlatform({
+        'FF00000003AABBCC': '${hex.encode([0x01, 0x02])}9000'
+      });
+      final card = ReaderCard('fake-reader');
 
-      final data = await transceiveEscape(
-          card, Uint8List.fromList([0xAA, 0xBB, 0xCC]));
+      final data =
+          await transceiveEscape(card, Uint8List.fromList([0xAA, 0xBB, 0xCC]));
 
       expect(data, equals([0x01, 0x02]));
     });

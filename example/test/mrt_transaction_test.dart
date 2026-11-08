@@ -10,10 +10,9 @@ Uint8List _blockFromHex(String hex16Bytes) =>
 
 void main() {
   group('decodeTimestamp', () {
-    test('decodes a real card-recorded timestamp (hour/day/month/year)',
-        () {
+    test('decodes a real card-recorded timestamp (hour/day/month/year)', () {
       // From a real Dhaka Metro transaction block: bytes 4-6 = 34 8A 90.
-      final value = (0x34 << 16) | (0x8A << 8) | 0x90;
+      const value = (0x34 << 16) | (0x8A << 8) | 0x90;
 
       final decoded = decodeTimestamp(value);
 
@@ -75,8 +74,7 @@ void main() {
     });
 
     test('labels an unrecognized header as Unknown', () {
-      expect(transactionWithHeader('FF FF FF FF').typeLabel,
-          equals('Unknown'));
+      expect(transactionWithHeader('FF FF FF FF').typeLabel, equals('Unknown'));
     });
   });
 
@@ -97,7 +95,8 @@ void main() {
       expect(t.trailing, equals('00 87'));
     });
 
-    test('drops blocks that decode to a pre-2020 timestamp (unused/padding '
+    test(
+        'drops blocks that decode to a pre-2020 timestamp (unused/padding '
         'blocks)', () {
       final blankBlock = Uint8List(16); // all zeros
 

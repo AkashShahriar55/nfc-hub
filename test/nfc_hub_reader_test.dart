@@ -18,23 +18,23 @@ class _FakeTag extends TagDriver {
 /// exposes a controllable tag stream, and counts passthrough calls.
 class _FakeNfcHub extends NfcHub {
   final tagController = StreamController<TagDriver>.broadcast();
-  final stateController = StreamController<CcidConnectionState>.broadcast();
+  final stateController = StreamController<NfcConnectionState>.broadcast();
 
-  CcidSourceFilter? lastFrom;
+  NfcSource? lastFrom;
   bool tagStreamCalled = false;
   bool availableReturn = true;
   int openNfcSettingsCalls = 0;
   int connectionStateCalls = 0;
 
   @override
-  Stream<TagDriver> tagStream({CcidSourceFilter? from}) {
+  Stream<TagDriver> tagStream({NfcSource? from}) {
     tagStreamCalled = true;
     lastFrom = from;
     return tagController.stream;
   }
 
   @override
-  Stream<CcidConnectionState> connectionState() {
+  Stream<NfcConnectionState> connectionState() {
     connectionStateCalls++;
     return stateController.stream;
   }
@@ -81,7 +81,7 @@ class _SeatedCardHub extends NfcHub {
   });
 
   @override
-  Stream<TagDriver> tagStream({CcidSourceFilter? from}) => _controller.stream;
+  Stream<TagDriver> tagStream({NfcSource? from}) => _controller.stream;
 
   /// Simulates a tap landing while a session may or may not already be
   /// listening.
@@ -93,16 +93,6 @@ class _SeatedCardHub extends NfcHub {
 }
 
 void main() {
-  test('NfcSource.builtIn() maps to CcidSourceFilter.builtInNfc()', () {
-    expect(const NfcSource.builtIn().toFilter(),
-        equals(const CcidSourceFilter.builtInNfc()));
-  });
-
-  test('NfcSource.reader(name) maps to CcidSourceFilter.reader(name)', () {
-    expect(const NfcSource.reader('ACR122U').toFilter(),
-        equals(const CcidSourceFilter.reader('ACR122U')));
-  });
-
   test('isAvailable() delegates to the underlying NfcHub', () async {
     final hub = _FakeNfcHub()..availableReturn = false;
     final reader = NfcHubReader.forTesting(hub);
@@ -126,8 +116,7 @@ void main() {
     expect(hub.openNfcSettingsCalls, 1);
   });
 
-  test('startSession delivers each emitted tag to onDiscovered once',
-      () async {
+  test('startSession delivers each emitted tag to onDiscovered once', () async {
     final hub = _FakeNfcHub();
     final reader = NfcHubReader.forTesting(hub);
     final seen = <String>[];
@@ -148,7 +137,8 @@ void main() {
     final reader = NfcHubReader.forTesting(hub);
     final seen = <String>[];
 
-    reader.startSession(onDiscovered: (tag) => seen.add((tag as _FakeTag).name));
+    reader.startSession(
+        onDiscovered: (tag) => seen.add((tag as _FakeTag).name));
     hub.tagController.add(_FakeTag('A'));
     await pumpEventQueue();
     await reader.stopSession();
@@ -170,8 +160,10 @@ void main() {
     final first = <String>[];
     final second = <String>[];
 
-    reader.startSession(onDiscovered: (tag) => first.add((tag as _FakeTag).name));
-    reader.startSession(onDiscovered: (tag) => second.add((tag as _FakeTag).name));
+    reader.startSession(
+        onDiscovered: (tag) => first.add((tag as _FakeTag).name));
+    reader.startSession(
+        onDiscovered: (tag) => second.add((tag as _FakeTag).name));
     hub.tagController.add(_FakeTag('A'));
     await pumpEventQueue();
 
@@ -336,8 +328,7 @@ void main() {
     expect(seen, ['A']);
   });
 
-  test(
-      'restarting a session over a still-seated card does not re-deliver it',
+  test('restarting a session over a still-seated card does not re-deliver it',
       () async {
     // Operates at the facade+dedicated-fake level (see _SeatedCardHub doc):
     // NfcHubReader.forTesting wraps whatever fake NfcHub it's given, so this
@@ -350,13 +341,15 @@ void main() {
     final reader = NfcHubReader.forTesting(hub);
     final seen = <String>[];
 
-    reader.startSession(onDiscovered: (tag) => seen.add((tag as _FakeTag).name));
+    reader.startSession(
+        onDiscovered: (tag) => seen.add((tag as _FakeTag).name));
     hub.tap(_FakeTag('A'));
     await pumpEventQueue();
     expect(seen, ['A']);
 
     // Restart over the still-seated card -- no new tap occurs.
-    reader.startSession(onDiscovered: (tag) => seen.add((tag as _FakeTag).name));
+    reader.startSession(
+        onDiscovered: (tag) => seen.add((tag as _FakeTag).name));
     await pumpEventQueue();
 
     expect(seen, ['A']);
@@ -366,10 +359,11 @@ void main() {
     final hub = _FakeNfcHub();
     final reader = NfcHubReader.forTesting(hub);
 
-    reader.startSession(onDiscovered: (_) {}, from: const NfcSource.reader('R1'));
+    reader.startSession(
+        onDiscovered: (_) {}, from: const NfcSource.reader('R1'));
 
     expect(hub.tagStreamCalled, isTrue);
-    expect(hub.lastFrom, equals(const CcidSourceFilter.reader('R1')));
+    expect(hub.lastFrom, equals(const NfcSource.reader('R1')));
   });
 
   test('no from: passes null to the underlying tagStream (all sources)', () {

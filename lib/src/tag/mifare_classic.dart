@@ -7,20 +7,29 @@ import 'tag_driver.dart';
 import '../transport/transport.dart';
 
 /// Which MIFARE Classic key slot (A or B) to authenticate with.
-enum MifareKeyType { a, b }
+enum MifareKeyType {
+  /// MIFARE key A.
+  a,
+
+  /// MIFARE key B.
+  b,
+}
 
 /// Thrown by [MifareClassicTag] authentication methods when a key is
 /// rejected by the card. This is an expected, catchable outcome (wrong key
 /// or wrong sector), not a bug.
 class MifareAuthException implements Exception {
+  /// A description of the failure.
   final String message;
 
+  /// Creates an exception with [message].
   const MifareAuthException(this.message);
 
   @override
   String toString() => 'MifareAuthException: $message';
 }
 
+/// Identification details for a MIFARE Classic tag.
 class MifareClassicInfo implements TagInfo {
   @override
   final String technology;
@@ -28,9 +37,14 @@ class MifareClassicInfo implements TagInfo {
   final Uint8List uid;
   @override
   final Uint8List? atr;
+
+  /// The card's SAK byte.
   final int sak;
+
+  /// The card's ATQA bytes.
   final Uint8List atqa;
 
+  /// Creates an info record from its decoded fields.
   const MifareClassicInfo({
     required this.technology,
     required this.uid,
@@ -49,12 +63,16 @@ class MifareClassicInfo implements TagInfo {
 /// PC/SC "Load Keys" and "General Authenticate" pseudo-APDUs (PC/SC Part 3)
 /// on CCID.
 class MifareClassicTag extends TagDriver {
+  /// The transport used to reach this tag.
   final MifareClassicTransport transport;
 
   /// The card's ATR, where the source supplies one. Null on sources that
   /// have no ATR concept (the device's built-in NFC antenna).
   final Uint8List? atr;
 
+  /// Creates a driver over [transport].
+  ///
+  /// Apps receive drivers from nfc_hub rather than constructing them.
   const MifareClassicTag(this.transport, {this.atr});
 
   static const List<String> _defaultKeysHex = [

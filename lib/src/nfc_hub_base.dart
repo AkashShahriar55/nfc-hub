@@ -11,8 +11,8 @@ import 'source/ccid_source.dart';
 import 'tag/tag_driver.dart';
 
 /// The device's single entry point for both direct CCID/PC-SC access
-/// ([listReaders]/[connect], unchanged since before Plan 3) and the unified
-/// tag API added in Plan 3 Task 7 ([tagStream]/[readTag]/[connectionState]/
+/// ([listReaders]/[connect]) and the unified
+/// tag API ([tagStream]/[readTag]/[connectionState]/
 /// [openNfcSettings]), which merges the phone's built-in NFC antenna with
 /// CCID/PC-SC readers behind one API.
 ///
@@ -21,6 +21,9 @@ import 'tag/tag_driver.dart';
 /// The constructor parameters below exist purely so tests can substitute
 /// fakes for them; production callers should just use `NfcHub()`.
 class NfcHub {
+  /// Creates a hub. Apps normally call this with no arguments.
+  ///
+  /// The optional parameters replace the underlying sources in tests.
   NfcHub({
     @visibleForTesting AndroidNfcManager? androidNfcManager,
     @visibleForTesting AndroidNfcSource? androidNfcSource,
@@ -32,7 +35,7 @@ class NfcHub {
   AndroidNfcManager? _androidNfcManager;
   AndroidNfcSource? _androidNfcSource;
   CcidSource? _ccidSource;
-  final Map<CcidSourceFilter?, Stream<TagDriver>> _tagStreams = {};
+  final Map<NfcSource?, Stream<TagDriver>> _tagStreams = {};
 
   AndroidNfcManager get _manager => _androidNfcManager ??= AndroidNfcManager();
 
@@ -86,8 +89,8 @@ class NfcHub {
 
   /// Connect to a reader by its name [reader]
   ///
-  /// Returns a [CcidCard] object
-  Future<CcidCard> connect(String reader) {
+  /// Returns a [ReaderCard] object
+  Future<ReaderCard> connect(String reader) {
     return NfcHubPlatform.instance.connect(reader);
   }
 
@@ -96,8 +99,8 @@ class NfcHub {
   /// an app never has to know, or branch on, which source produced a tag.
   ///
   /// Pass [from] to restrict to a single source instead: a
-  /// [CcidSourceFilter.builtInNfc] for the phone's own antenna, or a
-  /// [CcidSourceFilter.reader] for one named CCID/PC-SC reader. Omit it (or
+  /// [NfcSource.builtIn] for the phone's own antenna, or a
+  /// [NfcSource.reader] for one named CCID/PC-SC reader. Omit it (or
   /// pass `null`) to receive tags from every source, interleaved as they
   /// arrive.
   ///
@@ -107,7 +110,7 @@ class NfcHub {
   /// Returns the same stream instance for equal filter values, so multiple
   /// listeners share one pipeline (one set of source subscriptions) instead
   /// of creating parallel pipelines.
-  Stream<TagDriver> tagStream({CcidSourceFilter? from}) {
+  Stream<TagDriver> tagStream({NfcSource? from}) {
     return _tagStreams[from] ??= mergeTagStreams(
       androidSource: _nfcSource,
       ccidSource: _readerSource,
@@ -135,7 +138,7 @@ class NfcHub {
   /// is actually read" behavior -- tap-until-success, ignoring bad taps in
   /// between -- should use [tagStream] (or `NfcHubReader.startSession`)
   /// directly and handle `onError` itself, rather than [readTag].
-  Future<TagDriver> readTag({CcidSourceFilter? from, Duration? timeout}) {
+  Future<TagDriver> readTag({NfcSource? from, Duration? timeout}) {
     final stream = tagStream(from: from);
     if (timeout == null) return stream.first;
     return stream
@@ -152,7 +155,7 @@ class NfcHub {
   /// built-in NFC antenna is currently available (and why not, if it
   /// isn't), plus the live presence state of every attached CCID/PC-SC
   /// reader.
-  Stream<CcidConnectionState> connectionState() {
+  Stream<NfcConnectionState> connectionState() {
     return combineConnectionState(
       manager: _manager,
       ccidSource: _readerSource,
@@ -184,7 +187,12 @@ class NfcHub {
   }
 }
 
-class CcidCard {
+/// A connection to a card seated in a CCID/PC-SC reader.
+///
+/// Returned by [NfcHub.connect] for direct APDU exchange. Most apps use
+/// [NfcHub.tagStream] or [NfcHubReader] instead.
+class ReaderCard {
+  /// The name of the reader holding this card.
   final String reader;
 
   /// The card's answer-to-reset, captured at connect time where the
@@ -193,7 +201,8 @@ class CcidCard {
   /// probing in that case.
   final Uint8List? atr;
 
-  CcidCard(this.reader, {this.atr});
+  /// Creates a connection handle for the card in [reader].
+  ReaderCard(this.reader, {this.atr});
 
   /// Clock used to stamp [lastActivity]. Overridable (by [CcidSource], right
   /// after a successful connect) so tests can drive both the card's activity
@@ -223,8 +232,8 @@ class CcidCard {
     final completer = Completer<String?>();
     _chain = _chain.then((_) async {
       try {
-        completer.complete(
-            await NfcHubPlatform.instance.transceive(reader, capdu));
+        completer
+            .complete(await NfcHubPlatform.instance.transceive(reader, capdu));
       } catch (e, st) {
         completer.completeError(e, st);
       } finally {

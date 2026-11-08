@@ -16,6 +16,7 @@ class CapabilityContainer {
   /// The raw read/write access byte (high nibble = read, low nibble = write).
   final int accessByte;
 
+  /// Creates a container from its raw bytes.
   CapabilityContainer({
     required this.magicByte,
     required this.version,
@@ -63,17 +64,33 @@ class CapabilityContainer {
 /// the chip model of an NTAG21x / Mifare Ultralight family tag.
 ///
 /// This is a manufacturer-specific command, not part of the standard NFC
-/// Forum Type 2 Tag operation set — see `CcidCard.readChipVersion`.
+/// Forum Type 2 Tag operation set — see `Type2Tag.readChipVersion`.
 class ChipVersion {
+  /// The fixed header byte of the response.
   final int headerByte;
+
+  /// The vendor ID. NXP is `0x04`.
   final int vendorId;
+
+  /// The product type.
   final int productType;
+
+  /// The product subtype.
   final int productSubtype;
+
+  /// The major product version.
   final int majorVersion;
+
+  /// The minor product version.
   final int minorVersion;
+
+  /// The encoded storage size.
   final int storageSize;
+
+  /// The protocol type.
   final int protocolType;
 
+  /// Creates a version record from its decoded fields.
   ChipVersion({
     required this.headerByte,
     required this.vendorId,
@@ -100,8 +117,7 @@ class ChipVersion {
   }
 
   @override
-  String toString() =>
-      'ChipVersion(vendorId: 0x${vendorId.toRadixString(16)}, '
+  String toString() => 'ChipVersion(vendorId: 0x${vendorId.toRadixString(16)}, '
       'productType: 0x${productType.toRadixString(16)}, '
       'productSubtype: 0x${productSubtype.toRadixString(16)}, '
       'version: $majorVersion.$minorVersion, '
@@ -149,28 +165,17 @@ const _ultralightModels = <_UltralightModelEntry>[
       'MIFARE Ultralight Nano 40B (17pF)'),
   _UltralightModelEntry(0x04, 0x03, 0x01, 0x03, 0x00, 0x0B, 0x03,
       'MIFARE Ultralight Nano (17pF)'),
-  _UltralightModelEntry(
-      0x04, 0x04, 0x01, 0x01, 0x00, 0x0B, 0x03, 'NTAG 210'),
-  _UltralightModelEntry(
-      0x04, 0x04, 0x02, 0x01, 0x00, 0x0B, 0x03, 'NTAG 210'),
-  _UltralightModelEntry(
-      0x04, 0x04, 0x01, 0x01, 0x00, 0x0E, 0x03, 'NTAG 212'),
-  _UltralightModelEntry(
-      0x04, 0x04, 0x02, 0x01, 0x00, 0x0F, 0x03, 'NTAG 213'),
-  _UltralightModelEntry(
-      0x04, 0x04, 0x04, 0x01, 0x00, 0x0F, 0x03, 'NTAG 213F'),
-  _UltralightModelEntry(
-      0x04, 0x04, 0x02, 0x01, 0x01, 0x0F, 0x03, 'NTAG 213C'),
-  _UltralightModelEntry(
-      0x04, 0x04, 0x02, 0x03, 0x00, 0x0F, 0x03, 'NTAG 213TT'),
-  _UltralightModelEntry(
-      0x04, 0x04, 0x02, 0x01, 0x00, 0x11, 0x03, 'NTAG 215'),
-  _UltralightModelEntry(
-      0x04, 0x04, 0x04, 0x01, 0x00, 0x11, 0x03, 'NTAG 215F'),
-  _UltralightModelEntry(
-      0x04, 0x04, 0x02, 0x01, 0x00, 0x13, 0x03, 'NTAG 216'),
-  _UltralightModelEntry(
-      0x04, 0x04, 0x04, 0x01, 0x00, 0x13, 0x03, 'NTAG 216F'),
+  _UltralightModelEntry(0x04, 0x04, 0x01, 0x01, 0x00, 0x0B, 0x03, 'NTAG 210'),
+  _UltralightModelEntry(0x04, 0x04, 0x02, 0x01, 0x00, 0x0B, 0x03, 'NTAG 210'),
+  _UltralightModelEntry(0x04, 0x04, 0x01, 0x01, 0x00, 0x0E, 0x03, 'NTAG 212'),
+  _UltralightModelEntry(0x04, 0x04, 0x02, 0x01, 0x00, 0x0F, 0x03, 'NTAG 213'),
+  _UltralightModelEntry(0x04, 0x04, 0x04, 0x01, 0x00, 0x0F, 0x03, 'NTAG 213F'),
+  _UltralightModelEntry(0x04, 0x04, 0x02, 0x01, 0x01, 0x0F, 0x03, 'NTAG 213C'),
+  _UltralightModelEntry(0x04, 0x04, 0x02, 0x03, 0x00, 0x0F, 0x03, 'NTAG 213TT'),
+  _UltralightModelEntry(0x04, 0x04, 0x02, 0x01, 0x00, 0x11, 0x03, 'NTAG 215'),
+  _UltralightModelEntry(0x04, 0x04, 0x04, 0x01, 0x00, 0x11, 0x03, 'NTAG 215F'),
+  _UltralightModelEntry(0x04, 0x04, 0x02, 0x01, 0x00, 0x13, 0x03, 'NTAG 216'),
+  _UltralightModelEntry(0x04, 0x04, 0x04, 0x01, 0x00, 0x13, 0x03, 'NTAG 216F'),
 ];
 
 /// Resolves an exact NXP model name from [version], falling back to a

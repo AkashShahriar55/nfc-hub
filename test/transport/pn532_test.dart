@@ -19,7 +19,7 @@ class _FakeCcidPlatform extends NfcHubPlatform {
   Future<List<String>> listReaders() async => ['fake-reader'];
 
   @override
-  Future<CcidCard> connect(String reader) async => CcidCard(reader);
+  Future<ReaderCard> connect(String reader) async => ReaderCard(reader);
 
   @override
   Future<void> disconnect(String reader) async {}
@@ -35,10 +35,9 @@ void main() {
       // Full response: D5 4B (InListPassiveTarget) 01 (NbTg) 01 (Tg)
       // 00 44 (ATQA) 08 (SAK) 07 (UID length) 04 01 02 03 04 05 06 (UID).
       NfcHubPlatform.instance = _FakeCcidPlatform({
-        'FF00000004D44A0100':
-            'D54B01010044080704010203040506' '9000',
+        'FF00000004D44A0100': 'D54B01010044080704010203040506' '9000',
       });
-      final card = CcidCard('fake-reader');
+      final card = ReaderCard('fake-reader');
 
       final target = await pollTypeA(card);
 
@@ -52,7 +51,7 @@ void main() {
       NfcHubPlatform.instance = _FakeCcidPlatform({
         'FF00000004D44A0100': 'D54B00' '9000',
       });
-      final card = CcidCard('fake-reader');
+      final card = ReaderCard('fake-reader');
 
       final target = await pollTypeA(card);
 
@@ -75,7 +74,7 @@ void main() {
           '9000',
         ].join().toUpperCase(),
       });
-      final card = CcidCard('fake-reader');
+      final card = ReaderCard('fake-reader');
 
       final target = await pollTypeB(card);
 
@@ -88,7 +87,7 @@ void main() {
       NfcHubPlatform.instance = _FakeCcidPlatform({
         'FF00000004D44A0103': 'D54B00' '9000',
       });
-      final card = CcidCard('fake-reader');
+      final card = ReaderCard('fake-reader');
 
       final target = await pollTypeB(card);
 

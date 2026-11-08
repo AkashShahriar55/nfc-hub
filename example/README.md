@@ -1,16 +1,23 @@
-# ccid_example
+# nfc_hub example
 
-Demonstrates how to use the ccid plugin.
+A test harness for the [`nfc_hub`](https://pub.dev/packages/nfc_hub) plugin. It
+runs on Android and exercises every supported tag family against both tag
+sources.
 
-## Getting Started
+- **Auto-detect:** tap a tag on the phone or seat a card on a USB reader and it
+  appears in the list, with no button press.
+- **Connection status:** a live bar shows built-in NFC availability and the
+  state of each attached CCID/PC-SC reader.
+- **Per-family reads:** open a tag to see everything its driver can read,
+  including NDEF, MIFARE sectors, FeliCa blocks, and DESFire version data.
 
-This project is a starting point for a Flutter application.
+## Run it
 
-A few resources to get you started if this is your first Flutter project:
+Connect an Android device with NFC, or a USB CCID reader through an OTG adapter,
+then run:
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+```sh
+flutter run
+```
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+The detection code is in [`lib/harness_home.dart`](lib/harness_home.dart).

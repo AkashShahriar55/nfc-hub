@@ -70,7 +70,8 @@ void main() {
   group('parseNdefRecords', () {
     test('decodes a single well-known Text record', () {
       final message = Uint8List.fromList([
-        0xD1, 0x01, 0x08, 0x54, // flags(MB,ME,SR,TNF=1), typeLength=1, payloadLength=8, type 'T'
+        0xD1, 0x01, 0x08,
+        0x54, // flags(MB,ME,SR,TNF=1), typeLength=1, payloadLength=8, type 'T'
         0x02, 0x65, 0x6E, // status byte (lang len 2, UTF-8), 'en'
         0x68, 0x65, 0x6C, 0x6C, 0x6F, // 'hello'
       ]);
@@ -86,9 +87,11 @@ void main() {
 
     test('decodes a single well-known URI record', () {
       final message = Uint8List.fromList([
-        0xD1, 0x01, 0x0C, 0x55, // flags(MB,ME,SR,TNF=1), typeLength=1, payloadLength=12, type 'U'
+        0xD1, 0x01, 0x0C,
+        0x55, // flags(MB,ME,SR,TNF=1), typeLength=1, payloadLength=12, type 'U'
         0x01, // URI prefix code 0x01 -> 'http://www.'
-        0x65, 0x78, 0x61, 0x6D, 0x70, 0x6C, 0x65, 0x2E, 0x63, 0x6F, 0x6D, // 'example.com'
+        0x65, 0x78, 0x61, 0x6D, 0x70, 0x6C, 0x65, 0x2E, 0x63, 0x6F,
+        0x6D, // 'example.com'
       ]);
 
       final records = parseNdefRecords(message);
@@ -102,7 +105,8 @@ void main() {
     test('decodes a UTF-16 Text record without a BOM (defaults to big-endian)',
         () {
       final message = Uint8List.fromList([
-        0xD1, 0x01, 0x07, 0x54, // flags(MB,ME,SR,TNF=1), typeLength=1, payloadLength=7, type 'T'
+        0xD1, 0x01, 0x07,
+        0x54, // flags(MB,ME,SR,TNF=1), typeLength=1, payloadLength=7, type 'T'
         0x82, 0x65, 0x6E, // status byte (UTF-16 bit set, lang len 2), 'en'
         0x00, 0x68, 0x00, 0x69, // UTF-16BE "hi" (U+0068, U+0069)
       ]);
@@ -116,7 +120,8 @@ void main() {
     test('decodes a UTF-16 Text record with a big-endian BOM (BOM is skipped)',
         () {
       final message = Uint8List.fromList([
-        0xD1, 0x01, 0x09, 0x54, // flags(MB,ME,SR,TNF=1), typeLength=1, payloadLength=9, type 'T'
+        0xD1, 0x01, 0x09,
+        0x54, // flags(MB,ME,SR,TNF=1), typeLength=1, payloadLength=9, type 'T'
         0x82, 0x65, 0x6E, // status byte (UTF-16 bit set, lang len 2), 'en'
         0xFE, 0xFF, // big-endian BOM
         0x00, 0x68, 0x00, 0x69, // UTF-16BE "hi" (U+0068, U+0069)

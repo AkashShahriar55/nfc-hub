@@ -120,7 +120,8 @@ void main() {
   });
 
   group('AndroidNfcSource', () {
-    test('listening to tags() calls startReaderMode() exactly once, '
+    test(
+        'listening to tags() calls startReaderMode() exactly once, '
         'even with two listeners (broadcast)', () async {
       final manager = _FakeAndroidNfcManager();
       addTearDown(manager.dispose);
@@ -150,8 +151,7 @@ void main() {
 
       await sub1.cancel();
       await pumpEventQueue();
-      expect(manager.stopReaderModeCalls, 0,
-          reason: 'one listener remains');
+      expect(manager.stopReaderModeCalls, 0, reason: 'one listener remains');
 
       await sub2.cancel();
       await pumpEventQueue();
@@ -215,8 +215,9 @@ void main() {
       final source = AndroidNfcSource(manager);
       final drivers = <TagDriver>[];
       final errors = <Object>[];
-      final sub = source.tags().listen(drivers.add,
-          onError: (Object e) => errors.add(e));
+      final sub = source
+          .tags()
+          .listen(drivers.add, onError: (Object e) => errors.add(e));
       addTearDown(sub.cancel);
       await pumpEventQueue();
 

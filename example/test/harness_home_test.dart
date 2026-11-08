@@ -41,7 +41,7 @@ void main() {
   testWidgets('shows the empty-state hint before any tag is detected',
       (tester) async {
     final tagsController = StreamController<TagDriver>.broadcast();
-    final statesController = StreamController<CcidConnectionState>.broadcast();
+    final statesController = StreamController<NfcConnectionState>.broadcast();
     addTearDown(tagsController.close);
     addTearDown(statesController.close);
 
@@ -56,7 +56,7 @@ void main() {
   testWidgets('a detected tag appears with its technology and UID',
       (tester) async {
     final tagsController = StreamController<TagDriver>.broadcast();
-    final statesController = StreamController<CcidConnectionState>.broadcast();
+    final statesController = StreamController<NfcConnectionState>.broadcast();
     addTearDown(tagsController.close);
     addTearDown(statesController.close);
 
@@ -81,7 +81,7 @@ void main() {
   testWidgets('a second tag appears above the first (most-recent-first)',
       (tester) async {
     final tagsController = StreamController<TagDriver>.broadcast();
-    final statesController = StreamController<CcidConnectionState>.broadcast();
+    final statesController = StreamController<NfcConnectionState>.broadcast();
     addTearDown(tagsController.close);
     addTearDown(statesController.close);
 
@@ -121,7 +121,7 @@ void main() {
     // onError, so a per-tap failure like UnrecognizedTagException crashed
     // the zone and hardware-validation scenario 9 was unobservable.
     final tagsController = StreamController<TagDriver>.broadcast();
-    final statesController = StreamController<CcidConnectionState>.broadcast();
+    final statesController = StreamController<NfcConnectionState>.broadcast();
     addTearDown(tagsController.close);
     addTearDown(statesController.close);
 
@@ -130,8 +130,7 @@ void main() {
       connectionState: statesController.stream,
     )));
 
-    tagsController
-        .addError(const UnrecognizedTagException('unsupported tech'));
+    tagsController.addError(const UnrecognizedTagException('unsupported tech'));
     await tester.pump(); // deliver the error
     await tester.pump(); // let the SnackBar animate in
 
@@ -150,7 +149,7 @@ void main() {
       'a tag whose readTagInfo() throws still appears (with its error), '
       'and a following good tag still appears', (tester) async {
     final tagsController = StreamController<TagDriver>.broadcast();
-    final statesController = StreamController<CcidConnectionState>.broadcast();
+    final statesController = StreamController<NfcConnectionState>.broadcast();
     addTearDown(tagsController.close);
     addTearDown(statesController.close);
 

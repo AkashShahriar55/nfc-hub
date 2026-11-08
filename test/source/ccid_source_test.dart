@@ -37,10 +37,10 @@ class _FakePlatform extends NfcHubPlatform {
   final Map<String, String> cardUid = {};
 
   /// Readers holding a card that connects but cannot be identified: connect()
-  /// succeeds with an ATR-less [CcidCard], and every transceive throws -- so
+  /// succeeds with an ATR-less [ReaderCard], and every transceive throws -- so
   /// `identifyTag`'s probing chain deterministically ends in
   /// [UnrecognizedTagException]. Requires `NfcHubPlatform.instance` to be set
-  /// to this fake, since the probes go through [CcidCard.transceive].
+  /// to this fake, since the probes go through [ReaderCard.transceive].
   final Set<String> muteCards = {};
 
   final List<String> listReadersLog = [];
@@ -65,13 +65,13 @@ class _FakePlatform extends NfcHubPlatform {
   }
 
   @override
-  Future<CcidCard> connect(String reader) async {
+  Future<ReaderCard> connect(String reader) async {
     connectLog.add(reader);
-    if (muteCards.contains(reader)) return CcidCard(reader); // no ATR
+    if (muteCards.contains(reader)) return ReaderCard(reader); // no ATR
     if (!cardsPresent.contains(reader)) {
       throw Exception('no card seated in $reader');
     }
-    return CcidCard(reader, atr: _type2Atr);
+    return ReaderCard(reader, atr: _type2Atr);
   }
 
   @override
@@ -162,7 +162,8 @@ void main() {
       });
     });
 
-    test('a card that stays put across several ticks emits exactly once '
+    test(
+        'a card that stays put across several ticks emits exactly once '
         '(dedup)', () {
       FakeAsync().run((async) {
         final platform = _FakePlatform()
@@ -269,7 +270,8 @@ void main() {
       });
     });
 
-    test('a connect() that throws (empty reader, no card) does not emit or '
+    test(
+        'a connect() that throws (empty reader, no card) does not emit or '
         'crash, and the next tick still polls', () {
       FakeAsync().run((async) {
         final platform = _FakePlatform()..readers = ['reader-1'];
@@ -757,8 +759,7 @@ void main() {
         // awaiting the same still-incomplete `hold`.
         async.elapse(const Duration(milliseconds: 1600));
         expect(platform.callCount, 1,
-            reason:
-                'only the first tick ever entered listReaders() -- the '
+            reason: 'only the first tick ever entered listReaders() -- the '
                 'guard must have skipped every overlapping tick attempt '
                 'before it got this far');
         expect(platform.connectLog, isEmpty);
@@ -822,7 +823,7 @@ void main() {
 
     test(
         'the liveness probe is SKIPPED while the app is actively reading the '
-        'card (recent CcidCard.transceive traffic proves presence)', () {
+        'card (recent ReaderCard.transceive traffic proves presence)', () {
       FakeAsync().run((async) {
         final platform = _FakePlatform()
           ..readers = ['reader-1']
@@ -847,7 +848,7 @@ void main() {
         // completes just before each tick.
         final card = (drivers.single as Type2Tag);
         for (var i = 0; i < 4; i++) {
-          card.readUid(); // issues a transceive through the same CcidCard
+          card.readUid(); // issues a transceive through the same ReaderCard
           async.flushMicrotasks();
           async.elapse(const Duration(milliseconds: 500));
           fakeNow = fakeNow.add(const Duration(milliseconds: 500));
@@ -862,13 +863,13 @@ void main() {
       });
     });
 
-    test('CcidCard serializes concurrent transceives (no interleaving)',
+    test('ReaderCard serializes concurrent transceives (no interleaving)',
         () async {
       final platform = _SlowPlatform();
       NfcHubPlatform.instance = platform;
       addTearDown(() => NfcHubPlatform.instance = null);
 
-      final card = CcidCard('reader-1');
+      final card = ReaderCard('reader-1');
       final first = card.transceive('AA');
       final second = card.transceive('BB');
       platform.release('AA');
@@ -883,21 +884,22 @@ void main() {
     // FakeAsync (a FakeAsync/Stream.multi interaction quirk -- verified in
     // isolation that the same forwarding completes correctly under real
     // async). The production dispose() path this guards runs in real async.
-    test('dispose() completes tags() and taggedTags() for existing '
+    test(
+        'dispose() completes tags() and taggedTags() for existing '
         'listeners (an await-for over tags() must end, not hang forever)',
         () async {
       final platform = _FakePlatform()
         ..readers = ['reader-1']
         ..cardsPresent.add('reader-1');
-      final source = CcidSource(platform, pollInterval: const Duration(milliseconds: 10));
+      final source =
+          CcidSource(platform, pollInterval: const Duration(milliseconds: 10));
 
       var tagsDone = false;
       var taggedDone = false;
       final tagsSub =
           source.tags().listen((_) {}, onDone: () => tagsDone = true);
-      final taggedSub = source
-          .taggedTags()
-          .listen((_) {}, onDone: () => taggedDone = true);
+      final taggedSub =
+          source.taggedTags().listen((_) {}, onDone: () => taggedDone = true);
 
       // Let the poll loop run a few ticks so the card is seated/occupied.
       await Future<void>.delayed(const Duration(milliseconds: 60));
@@ -943,13 +945,13 @@ class _SlowConnectFakePlatform extends _FakePlatform {
 }
 
 /// A minimal [NfcHubPlatform] whose [transceive] blocks until [release] is
-/// called for that exact APDU -- used to prove [CcidCard.transceive]
+/// called for that exact APDU -- used to prove [ReaderCard.transceive]
 /// serializes concurrent calls rather than letting a second APDU start
 /// before the first completes.
 ///
 /// [release] can race ahead of [transceive] (e.g. a test calls both
-/// [CcidCard.transceive]s -- which don't actually reach this platform until
-/// a later microtask, since [CcidCard] chains them through a `Future.then`
+/// [ReaderCard.transceive]s -- which don't actually reach this platform until
+/// a later microtask, since [ReaderCard] chains them through a `Future.then`
 /// -- and then calls [release] synchronously right after, before either
 /// gate exists yet). Both [release] and [transceive] use `putIfAbsent` on
 /// the same completer so whichever runs first "arms" the gate and whichever

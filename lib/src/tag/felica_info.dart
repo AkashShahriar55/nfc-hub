@@ -58,4 +58,5 @@ const _systemCodeLabels = <int, String>{
   0xFFFF: 'Wildcard / unformatted',
 };
 
+/// Returns a readable name for [systemCode], or null if it is not recognized.
 String? felicaSystemCodeLabel(int systemCode) => _systemCodeLabels[systemCode];

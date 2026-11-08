@@ -1,3 +1,23 @@
+## 0.8.0
+
+First release on pub.dev.
+
+See the [migration guide](doc/migrating-to-0.8.md) for upgrade steps.
+
+- **Breaking:** `CcidSourceFilter` is now `NfcSource`, and
+  `CcidSourceFilter.builtInNfc()` is now `NfcSource.builtIn()`.
+- **Breaking:** `CcidConnectionState` is now `NfcConnectionState`.
+- **Breaking:** `CcidCard` is now `ReaderCard`.
+- **Breaking:** removed `NfcSource.toFilter()`; `NfcSource` is now the type the
+  stream API takes directly.
+- **Breaking:** the Android package is now `com.nsa.nfchub`, and the USB
+  permission broadcast action is `com.nsa.nfchub.USB_PERMISSION`.
+- Removed the unused Linux, Windows, and Darwin native directories. The package
+  was already Android-only.
+- CCID protocol identifiers (`CcidException`, `CcidSource`,
+  `CcidTransportBackend`, the `CCID_*` error codes) are deliberately retained:
+  they name the USB device class the plugin speaks.
+
 ## 0.7.0
 
 Reliability release.
@@ -113,9 +133,8 @@ implement the same interfaces without touching a driver.
 - `Ccid` is now `NfcHub`. `CcidPlatform`, `MethodChannelCcid`, and `PcscCcid`
   are now `NfcHubPlatform`, `MethodChannelNfcHub`, and `PcscNfcHub`.
   `CcidCard` keeps its name.
-- The Android package is now `com.cheqplease.nfchub` and the plugin class is
-  `NfcHubPlugin`. The method channel is named `nfc_hub`; the USB permission
-  broadcast action is `com.cheqplease.nfchub.USB_PERMISSION`.
+- The plugin class is now `NfcHubPlugin`, and the method channel is named
+  `nfc_hub`.
 - No functional changes: tag reading behaves exactly as in 0.3.0.
 - `TagDriver` now declares `readTagInfo()`, so callers no longer need to type-check the concrete driver to call it. Every existing driver already implemented it; this only makes the contract explicit.
 

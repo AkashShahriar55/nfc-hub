@@ -15,7 +15,7 @@ class _FakePlatform extends NfcHubPlatform {
   Future<List<String>> listReaders() async => ['fake'];
 
   @override
-  Future<CcidCard> connect(String reader) async => CcidCard(reader);
+  Future<ReaderCard> connect(String reader) async => ReaderCard(reader);
 
   @override
   Future<void> disconnect(String reader) async {}
@@ -38,7 +38,7 @@ class _FlakyPollPlatform extends NfcHubPlatform {
   Future<List<String>> listReaders() async => ['fake'];
 
   @override
-  Future<CcidCard> connect(String reader) async => CcidCard(reader);
+  Future<ReaderCard> connect(String reader) async => ReaderCard(reader);
 
   @override
   Future<void> disconnect(String reader) async {}
@@ -70,18 +70,19 @@ void main() {
   group('Type2 transport', () {
     test('readUid sends the PC/SC Get Data pseudo-APDU', () async {
       install({'FFCA000000': '04AABBCCDDEEFF9000'});
-      final t = CcidTransportBackend(CcidCard('fake')).type2();
+      final t = CcidTransportBackend(ReaderCard('fake')).type2();
 
       final uid = await t.readUid();
 
       expect(platform.sent, ['FFCA000000']);
-      expect(uid, Uint8List.fromList([0x04, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF]));
+      expect(
+          uid, Uint8List.fromList([0x04, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF]));
     });
 
     test('readCapabilityContainer reads 4 bytes at page 3 (Le=04, NOT 10)',
         () async {
       install({'FFB0000304': 'E1106D009000'});
-      final t = CcidTransportBackend(CcidCard('fake')).type2();
+      final t = CcidTransportBackend(ReaderCard('fake')).type2();
 
       final cc = await t.readCapabilityContainer();
 
@@ -94,7 +95,7 @@ void main() {
       // Regression guard: the historical bug here was 'FFB00000${page}10',
       // a 6-byte APDU with P2 stuck at 00, so every page read returned page 0.
       install({'FFB0000410': '${'11' * 16}9000'});
-      final t = CcidTransportBackend(CcidCard('fake')).type2();
+      final t = CcidTransportBackend(ReaderCard('fake')).type2();
 
       final page = await t.readPages(4);
 
@@ -105,7 +106,7 @@ void main() {
     test('getVersion sends the escape-wrapped GET_VERSION and returns 8 bytes',
         () async {
       install({'FF0000000160': '0004030101000B039000'});
-      final t = CcidTransportBackend(CcidCard('fake')).type2();
+      final t = CcidTransportBackend(ReaderCard('fake')).type2();
 
       final v = await t.getVersion();
 
@@ -113,10 +114,9 @@ void main() {
       expect(v!.length, 8);
     });
 
-    test('getVersion returns null (does not throw) when unsupported',
-        () async {
+    test('getVersion returns null (does not throw) when unsupported', () async {
       install({'FF0000000160': '6A81'}); // not 9000
-      final t = CcidTransportBackend(CcidCard('fake')).type2();
+      final t = CcidTransportBackend(ReaderCard('fake')).type2();
 
       expect(await t.getVersion(), isNull);
     });
@@ -133,7 +133,7 @@ void main() {
         'FF82000006FFFFFFFFFFFF': '9000',
         'FF860000050100046000': '9000',
       });
-      final t = await CcidTransportBackend(CcidCard('fake')).mifareClassic();
+      final t = await CcidTransportBackend(ReaderCard('fake')).mifareClassic();
       platform.sent.clear();
 
       await t.authenticate(
@@ -155,7 +155,7 @@ void main() {
         'FF00000004D44A0100': pollA,
         'FFB0000410': '${'22' * 16}9000',
       });
-      final t = await CcidTransportBackend(CcidCard('fake')).mifareClassic();
+      final t = await CcidTransportBackend(ReaderCard('fake')).mifareClassic();
       platform.sent.clear();
 
       final block = await t.readBlock(4);
@@ -166,7 +166,7 @@ void main() {
 
     test('identity fields come from the PN532 poll, not the ATR', () async {
       install({'FF00000004D44A0100': pollA});
-      final t = await CcidTransportBackend(CcidCard('fake')).mifareClassic();
+      final t = await CcidTransportBackend(ReaderCard('fake')).mifareClassic();
 
       expect(t.sak, 0x08);
       expect(t.atqa, Uint8List.fromList([0x00, 0x04]));
@@ -179,7 +179,7 @@ void main() {
         'FF00000004D44A0100': pollA,
         'FF82000006FFFFFFFFFFFF': '6300', // rejected
       });
-      final t = await CcidTransportBackend(CcidCard('fake')).mifareClassic();
+      final t = await CcidTransportBackend(ReaderCard('fake')).mifareClassic();
 
       expect(
         () => t.authenticate(0, MifareKeyType.a,
@@ -197,7 +197,7 @@ void main() {
         'FF82000006A0A1A2A3A4A5': '9000',
         'FF860000050100006000': '9000',
       });
-      final t = await CcidTransportBackend(CcidCard('fake')).mifareClassic();
+      final t = await CcidTransportBackend(ReaderCard('fake')).mifareClassic();
       platform.sent.clear();
 
       await t.authenticate(0, MifareKeyType.a,
@@ -217,10 +217,18 @@ void main() {
       const idm = '0102030405060708';
       const capdu = 'FF0000000DD440010A0C$idm';
       install({capdu: 'D541000D0D${idm}0190E39000'});
-      final t = CcidTransportBackend(CcidCard('fake')).nfcF();
+      final t = CcidTransportBackend(ReaderCard('fake')).nfcF();
 
       final frame = Uint8List.fromList([
-        0x0C, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+        0x0C,
+        0x01,
+        0x02,
+        0x03,
+        0x04,
+        0x05,
+        0x06,
+        0x07,
+        0x08,
       ]);
       final response = await t.transceive(frame);
 
@@ -231,10 +239,9 @@ void main() {
       expect(response[1], 0x0D); // Request System Code response code
     });
 
-    test('idm reads via Get UID (the reader returns the FeliCa IDm)',
-        () async {
+    test('idm reads via Get UID (the reader returns the FeliCa IDm)', () async {
       install({'FFCA000000': '01020304050607089000'});
-      final t = CcidTransportBackend(CcidCard('fake')).nfcF();
+      final t = CcidTransportBackend(ReaderCard('fake')).nfcF();
 
       expect(await t.idm, Uint8List.fromList([1, 2, 3, 4, 5, 6, 7, 8]));
       expect(platform.sent, ['FFCA000000']);
@@ -248,13 +255,13 @@ void main() {
     const pmmHex = '0135428282468CFF';
     const pollCapdu = 'FF00000009D440010600FFFF0000';
     const pollResponse = 'D541001201$idm${pmmHex}9000';
-    final pmmBytes = Uint8List.fromList(
-        [0x01, 0x35, 0x42, 0x82, 0x82, 0x46, 0x8C, 0xFF]);
+    final pmmBytes =
+        Uint8List.fromList([0x01, 0x35, 0x42, 0x82, 0x82, 0x46, 0x8C, 0xFF]);
 
     test('pmm sends the FeliCa Polling frame and returns the 8-byte PMm',
         () async {
       install({pollCapdu: pollResponse});
-      final t = CcidTransportBackend(CcidCard('fake')).nfcF();
+      final t = CcidTransportBackend(ReaderCard('fake')).nfcF();
 
       final pmm = await t.pmm;
 
@@ -265,7 +272,7 @@ void main() {
     test('pmm is cached -- a second read does not re-send the polling APDU',
         () async {
       install({pollCapdu: pollResponse});
-      final t = CcidTransportBackend(CcidCard('fake')).nfcF();
+      final t = CcidTransportBackend(ReaderCard('fake')).nfcF();
 
       final pmm = await t.pmm;
       final pmmAgain = await t.pmm;
@@ -281,7 +288,7 @@ void main() {
         'FF00000004D44A0100': 'D54B01010004200404AABBCC9000',
         '00A4040000': '6A82',
       });
-      final t = await CcidTransportBackend(CcidCard('fake')).isoDep();
+      final t = await CcidTransportBackend(ReaderCard('fake')).isoDep();
       platform.sent.clear();
 
       final r = await t.transceive(Uint8List.fromList([0, 0xA4, 4, 0, 0]));
@@ -301,25 +308,55 @@ void main() {
       // NTAG-style ATR: 3B 8F 80 01 | 80 4F 0C A0 00 00 03 06 03 00 03 00 00
       // 00 00 | 68. T0=0x8F -> K=15 historical bytes; TCK is the final byte.
       final atr = Uint8List.fromList([
-        0x3B, 0x8F, 0x80, 0x01,
-        0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0x00, 0x03,
-        0x00, 0x00, 0x00, 0x00,
+        0x3B,
+        0x8F,
+        0x80,
+        0x01,
+        0x80,
+        0x4F,
+        0x0C,
+        0xA0,
+        0x00,
+        0x00,
+        0x03,
+        0x06,
+        0x03,
+        0x00,
+        0x03,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
         0x68,
       ]);
-      final t = await CcidTransportBackend(CcidCard('fake', atr: atr)).isoDep();
+      final t =
+          await CcidTransportBackend(ReaderCard('fake', atr: atr)).isoDep();
 
       expect(
         t.historicalBytes,
         Uint8List.fromList([
-          0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0x00, 0x03,
-          0x00, 0x00, 0x00, 0x00,
+          0x80,
+          0x4F,
+          0x0C,
+          0xA0,
+          0x00,
+          0x00,
+          0x03,
+          0x06,
+          0x03,
+          0x00,
+          0x03,
+          0x00,
+          0x00,
+          0x00,
+          0x00,
         ]),
       );
     });
 
     test('historicalBytes is null when the card has no ATR', () async {
       install({'FF00000004D44A0100': 'D54B01010004200404AABBCC9000'});
-      final t = await CcidTransportBackend(CcidCard('fake')).isoDep();
+      final t = await CcidTransportBackend(ReaderCard('fake')).isoDep();
 
       expect(t.historicalBytes, isNull);
     });
@@ -337,7 +374,7 @@ void main() {
         '00A4040000': '9000',
       });
 
-      final t = await CcidTransportBackend(CcidCard('fake')).isoDep();
+      final t = await CcidTransportBackend(ReaderCard('fake')).isoDep();
 
       expect(await t.uid, isEmpty);
 
@@ -351,7 +388,7 @@ void main() {
   group('NfcB transport', () {
     test('nfcB() returns null when no Type B target answers', () async {
       install({'FF00000004D44A0103': 'D54B009000'}); // NbTg = 0
-      final t = await CcidTransportBackend(CcidCard('fake')).nfcB();
+      final t = await CcidTransportBackend(ReaderCard('fake')).nfcB();
 
       expect(t, isNull);
     });
@@ -360,10 +397,9 @@ void main() {
       // ATQB: 50 | PUPI(11223344) | AppData(4) | ProtocolInfo(3)
       // ATQB = 50 | PUPI(11223344) | AppData(AABBCCDD) | ProtocolInfo(010203)
       install({
-        'FF00000004D44A0103':
-            'D54B01015011223344AABBCCDD010203009000',
+        'FF00000004D44A0103': 'D54B01015011223344AABBCCDD010203009000',
       });
-      final t = await CcidTransportBackend(CcidCard('fake')).nfcB();
+      final t = await CcidTransportBackend(ReaderCard('fake')).nfcB();
 
       expect(t!.pupi, Uint8List.fromList([0x11, 0x22, 0x33, 0x44]));
       expect(t.atqb.length, 12);
@@ -377,7 +413,7 @@ void main() {
       final flaky = _FlakyPollPlatform();
       NfcHubPlatform.instance = flaky;
 
-      final t = await CcidTransportBackend(CcidCard('fake')).mifareClassic();
+      final t = await CcidTransportBackend(ReaderCard('fake')).mifareClassic();
 
       expect(flaky.pollAttempts, 2);
       expect(t.sak, 0x08);
@@ -391,7 +427,7 @@ void main() {
       final flaky = _FlakyPollPlatform();
       NfcHubPlatform.instance = flaky;
 
-      final t = await CcidTransportBackend(CcidCard('fake')).isoDep();
+      final t = await CcidTransportBackend(ReaderCard('fake')).isoDep();
 
       expect(flaky.pollAttempts, 2);
       expect(await t.uid, Uint8List.fromList([0x04, 0xAA, 0xBB, 0xCC]));
@@ -403,16 +439,45 @@ void main() {
       // NTAG-style ATR: 3B 8F 80 01 | 80 4F 0C A0 00 00 03 06 03 00 03 00 00
       // 00 00 | 68. T0=0x8F -> K=15 historical bytes; TCK is the final byte.
       final atr = Uint8List.fromList([
-        0x3B, 0x8F, 0x80, 0x01,
-        0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0x00, 0x03,
-        0x00, 0x00, 0x00, 0x00,
+        0x3B,
+        0x8F,
+        0x80,
+        0x01,
+        0x80,
+        0x4F,
+        0x0C,
+        0xA0,
+        0x00,
+        0x00,
+        0x03,
+        0x06,
+        0x03,
+        0x00,
+        0x03,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
         0x68,
       ]);
       expect(
         historicalBytesFromAtr(atr),
         Uint8List.fromList([
-          0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0x00, 0x03,
-          0x00, 0x00, 0x00, 0x00,
+          0x80,
+          0x4F,
+          0x0C,
+          0xA0,
+          0x00,
+          0x00,
+          0x03,
+          0x06,
+          0x03,
+          0x00,
+          0x03,
+          0x00,
+          0x00,
+          0x00,
+          0x00,
         ]),
       );
     });
@@ -437,8 +502,7 @@ void main() {
         'the trailing TCK', () {
       // T0=0x83 -> K=3, but only 2 bytes follow T0 (not 3 + 1 TCK).
       expect(
-        historicalBytesFromAtr(
-            Uint8List.fromList([0x3B, 0x83, 0xAA, 0xBB])),
+        historicalBytesFromAtr(Uint8List.fromList([0x3B, 0x83, 0xAA, 0xBB])),
         isNull,
       );
     });

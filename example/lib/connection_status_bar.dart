@@ -15,7 +15,7 @@ import 'package:nfc_hub/nfc_hub.dart';
 class ConnectionStatusBar extends StatefulWidget {
   const ConnectionStatusBar({super.key, this.states, this.onEnableNfc});
 
-  final Stream<CcidConnectionState>? states;
+  final Stream<NfcConnectionState>? states;
   final Future<void> Function()? onEnableNfc;
 
   @override
@@ -23,8 +23,8 @@ class ConnectionStatusBar extends StatefulWidget {
 }
 
 class _ConnectionStatusBarState extends State<ConnectionStatusBar> {
-  StreamSubscription<CcidConnectionState>? _subscription;
-  CcidConnectionState? _state;
+  StreamSubscription<NfcConnectionState>? _subscription;
+  NfcConnectionState? _state;
 
   @override
   void initState() {
@@ -69,13 +69,14 @@ class _ConnectionStatusBarState extends State<ConnectionStatusBar> {
     );
   }
 
-  Widget _builtInNfcChip(ThemeData theme, CcidConnectionState? state) {
+  Widget _builtInNfcChip(ThemeData theme, NfcConnectionState? state) {
     if (state == null) {
       return const Chip(label: Text('NFC: unknown'));
     }
     if (state.builtInNfcAvailable) {
       return Chip(
-        avatar: Icon(Icons.check_circle, color: theme.colorScheme.primary, size: 18),
+        avatar: Icon(Icons.check_circle,
+            color: theme.colorScheme.primary, size: 18),
         label: const Text('NFC ready'),
       );
     }
@@ -97,7 +98,9 @@ class _ConnectionStatusBarState extends State<ConnectionStatusBar> {
       avatar: Icon(
         reader.cardPresent ? Icons.circle : Icons.circle_outlined,
         size: 14,
-        color: reader.cardPresent ? theme.colorScheme.primary : theme.disabledColor,
+        color: reader.cardPresent
+            ? theme.colorScheme.primary
+            : theme.disabledColor,
       ),
       label: Text(reader.name),
     );

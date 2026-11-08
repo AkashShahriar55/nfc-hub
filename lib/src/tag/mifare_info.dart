@@ -4,11 +4,22 @@
 /// here -- NXP's own guidance is that ATQA can be misleading and SAK is
 /// the authoritative discriminator.
 enum MifareFamily {
+  /// MIFARE Classic 1K.
   classic1k,
+
+  /// MIFARE Classic 4K.
   classic4k,
+
+  /// MIFARE Mini.
   mini,
+
+  /// MIFARE Ultralight or NTAG.
   ultralightOrNtag,
+
+  /// MIFARE DESFire, or MIFARE Plus at security level 3.
   desfireOrPlusSl3,
+
+  /// A SAK value this package does not recognize.
   unknown,
 }
 

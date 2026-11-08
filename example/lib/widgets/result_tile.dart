@@ -25,12 +25,15 @@ class ResultTile extends StatelessWidget {
       body = const Padding(
         padding: EdgeInsets.symmetric(vertical: 4),
         child: SizedBox(
-            width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2)),
       );
     } else if (error != null) {
       body = SelectableText(
         'Failed: $error',
-        style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.error),
+        style: theme.textTheme.bodyMedium
+            ?.copyWith(color: theme.colorScheme.error),
       );
     } else {
       body = SelectableText(

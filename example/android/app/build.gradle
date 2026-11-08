@@ -23,7 +23,7 @@ if (flutterVersionName == null) {
 }
 
 android {
-    namespace "com.cheqplease.nfchub.example"
+    namespace "com.nsa.nfchub.example"
     compileSdk flutter.compileSdkVersion
 
     compileOptions {
@@ -40,7 +40,7 @@ android {
     }
 
     defaultConfig {
-        applicationId "com.cheqplease.nfchub.example"
+        applicationId "com.nsa.nfchub.example"
         minSdkVersion 24
         targetSdk flutter.targetSdkVersion
         versionCode flutterVersionCode.toInteger()

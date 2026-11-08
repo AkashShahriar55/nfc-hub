@@ -4,25 +4,61 @@
 /// Ultralight/NTAG `GET_VERSION` format (`ChipVersion` in
 /// `tag_info.dart`).
 class DesfireVersion {
+  /// The hardware vendor ID. NXP is `0x04`.
   final int hardwareVendorId;
+
+  /// The hardware type.
   final int hardwareType;
+
+  /// The hardware subtype.
   final int hardwareSubtype;
+
+  /// The hardware major version.
   final int hardwareMajor;
+
+  /// The hardware minor version.
   final int hardwareMinor;
+
+  /// The encoded hardware storage size.
   final int hardwareStorageSize;
+
+  /// The hardware protocol type.
   final int hardwareProtocol;
+
+  /// The software vendor ID.
   final int softwareVendorId;
+
+  /// The software type.
   final int softwareType;
+
+  /// The software subtype.
   final int softwareSubtype;
+
+  /// The software major version.
   final int softwareMajor;
+
+  /// The software minor version.
   final int softwareMinor;
+
+  /// The encoded software storage size.
   final int softwareStorageSize;
+
+  /// The software protocol type.
   final int softwareProtocol;
+
+  /// The card's UID bytes.
   final List<int> uid;
+
+  /// The production batch number bytes.
   final List<int> batch;
+
+  /// The calendar week of production, as stored on the card.
   final int productionWeek;
+
+  /// The year of production, as stored on the card.
   final int productionYear;
 
+  /// Creates a version record from its decoded fields.
   const DesfireVersion({
     required this.hardwareVendorId,
     required this.hardwareType,

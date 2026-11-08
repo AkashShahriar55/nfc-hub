@@ -2,7 +2,7 @@ import 'dart:typed_data';
 
 import 'package:convert/convert.dart';
 
-import '../nfc_hub_base.dart' show CcidCard;
+import '../nfc_hub_base.dart' show ReaderCard;
 import '../transport/backend.dart';
 import '../transport/ccid_backend.dart';
 import 'felica.dart';
@@ -17,15 +17,15 @@ import '../apdu.dart';
 /// Identifies the tag family of the card connected through [card] and
 /// returns the matching typed driver.
 ///
-/// Uses [CcidCard.atr] where available (see PC/SC Part 3's historical-byte
-/// markers for contactless storage cards). Where [CcidCard.atr] is null or
+/// Uses [ReaderCard.atr] where available (see PC/SC Part 3's historical-byte
+/// markers for contactless storage cards). Where [ReaderCard.atr] is null or
 /// doesn't match a known pattern, falls back to ordered capability probing.
 ///
 /// Throws [UnrecognizedTagException] if no known tag family matches. The
 /// exception's message includes the ATR (if any) and the outcome of every
 /// probe that was tried, so a caller displaying `toString()` on-screen has
 /// enough to diagnose a detection failure without separate log access.
-Future<TagDriver> identifyTag(CcidCard card) async {
+Future<TagDriver> identifyTag(ReaderCard card) async {
   return identifyFromBackend(CcidTransportBackend(card), atr: card.atr);
 }
 
@@ -80,7 +80,7 @@ Future<TagDriver> identifyFromBackend(
 }
 
 Future<TagDriver?> _identifyFromAtr(
-    CcidCard card, CcidTransportBackend backend, Uint8List atr) async {
+    ReaderCard card, CcidTransportBackend backend, Uint8List atr) async {
   if (atr.length < 5) return null;
   final historicalBytes = atr.sublist(4);
 
@@ -169,7 +169,7 @@ bool _isIsoDepSw(String responseHex) {
       sw == '6E00';
 }
 
-Future<String?> _tryTransceive(CcidCard card, String capdu) async {
+Future<String?> _tryTransceive(ReaderCard card, String capdu) async {
   try {
     return await card.transceive(capdu);
   } catch (_) {
@@ -187,7 +187,7 @@ Future<String?> _tryTransceive(CcidCard card, String capdu) async {
 /// probes from running, since FeliCa in particular is a different RF
 /// technology (NFC-F) that isn't expected to answer it.
 Future<TagDriver> _identifyByProbing(
-    CcidCard card, CcidTransportBackend backend, Uint8List? atr) async {
+    ReaderCard card, CcidTransportBackend backend, Uint8List? atr) async {
   final log = <String>[
     atr == null ? 'atr=none' : 'atr=${hex.encode(atr)} (no known pattern)',
   ];

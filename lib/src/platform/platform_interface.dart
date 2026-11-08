@@ -6,6 +6,9 @@ import '../nfc_hub_base.dart';
 import 'method_channel.dart';
 import 'pcsc.dart';
 
+/// The interface that platform implementations of nfc_hub extend.
+///
+/// Apps should use [NfcHub] or `NfcHubReader` rather than this class.
 abstract class NfcHubPlatform extends PlatformInterface {
   /// Constructs a NfcHubPlatform.
   NfcHubPlatform() : super(token: _token);
@@ -43,18 +46,23 @@ abstract class NfcHubPlatform extends PlatformInterface {
     _instanceOverride = instance;
   }
 
+  /// Returns the names of the attached CCID/PC-SC readers.
   Future<List<String>> listReaders() {
     throw UnimplementedError('listReaders() has not been implemented.');
   }
 
+  /// Sends the hex-encoded APDU [capdu] to the card in [reader] and returns
+  /// the hex-encoded response.
   Future<String?> transceive(String reader, String capdu) {
     throw UnimplementedError('transceive() has not been implemented.');
   }
 
-  Future<CcidCard> connect(String reader) {
+  /// Connects to the card seated in [reader].
+  Future<ReaderCard> connect(String reader) {
     throw UnimplementedError('connect() has not been implemented.');
   }
 
+  /// Disconnects from the card seated in [reader].
   Future<void> disconnect(String reader) {
     throw UnimplementedError('disconnect() has not been implemented.');
   }
@@ -65,5 +73,6 @@ abstract class NfcHubPlatform extends PlatformInterface {
   /// A no-op by default rather than a throw: a platform with no native half to
   /// configure (PC/SC) and a test fake should both be able to ignore this
   /// without breaking [NfcHub.setLogging].
-  Future<void> setLogging({required bool enabled, required bool verbose}) async {}
+  Future<void> setLogging(
+      {required bool enabled, required bool verbose}) async {}
 }

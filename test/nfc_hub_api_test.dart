@@ -33,12 +33,12 @@ class _FakePlatform extends NfcHubPlatform {
   }
 
   @override
-  Future<CcidCard> connect(String reader) async {
+  Future<ReaderCard> connect(String reader) async {
     connectLog.add(reader);
     if (!cardsPresent.contains(reader)) {
       throw Exception('no card seated in $reader');
     }
-    return CcidCard(reader, atr: _type2Atr);
+    return ReaderCard(reader, atr: _type2Atr);
   }
 
   @override
@@ -174,15 +174,27 @@ void main() {
       expect(identical(hub.tagStream(), hub.tagStream()), isTrue);
       expect(
         identical(
-          hub.tagStream(from: const CcidSourceFilter.builtInNfc()),
-          hub.tagStream(from: const CcidSourceFilter.builtInNfc()),
+          hub.tagStream(from: const NfcSource.builtIn()),
+          hub.tagStream(from: const NfcSource.builtIn()),
         ),
         isTrue,
       );
       expect(
-        identical(hub.tagStream(),
-            hub.tagStream(from: const CcidSourceFilter.builtInNfc())),
+        identical(
+            hub.tagStream(), hub.tagStream(from: const NfcSource.builtIn())),
         isFalse,
+      );
+
+      // Deliberately non-const: const instances are canonicalized, so only
+      // runtime-built sources exercise NfcSource's value equality, which the
+      // shared-pipeline map depends on.
+      final readerName = ['reader', '1'].join('-');
+      expect(
+        identical(
+          hub.tagStream(from: NfcSource.reader(readerName)),
+          hub.tagStream(from: NfcSource.reader(readerName)),
+        ),
+        isTrue,
       );
     });
 
@@ -224,7 +236,7 @@ void main() {
       await sub.cancel();
     });
 
-    test('from: builtInNfc() emits ONLY Android-source tags', () async {
+    test('from: builtIn() emits ONLY Android-source tags', () async {
       final manager = _FakeAndroidNfcManager();
       final platform = _FakePlatform()
         ..readers = ['reader-1']
@@ -238,9 +250,8 @@ void main() {
       );
 
       final drivers = <TagDriver>[];
-      final sub = hub
-          .tagStream(from: const CcidSourceFilter.builtInNfc())
-          .listen(drivers.add);
+      final sub =
+          hub.tagStream(from: const NfcSource.builtIn()).listen(drivers.add);
       await pumpEventQueue();
 
       emitFelicaDiscovery(1);
@@ -271,7 +282,7 @@ void main() {
 
         final drivers = <TagDriver>[];
         final sub = hub
-            .tagStream(from: const CcidSourceFilter.reader('reader-1'))
+            .tagStream(from: const NfcSource.reader('reader-1'))
             .listen(drivers.add);
 
         async.elapse(const Duration(milliseconds: 500));
@@ -309,7 +320,7 @@ void main() {
 
         final filtered = <TagDriver>[];
         final filteredSub = hub
-            .tagStream(from: const CcidSourceFilter.reader('reader-1'))
+            .tagStream(from: const NfcSource.reader('reader-1'))
             .listen(filtered.add);
         async.elapse(const Duration(milliseconds: 1500));
         expect(filtered, isEmpty,
@@ -400,8 +411,7 @@ void main() {
 
     test(
         'with a timeout: throws TimeoutException AND stops BOTH sources '
-        '(no leaked reader mode / poll loop) when nothing arrives',
-        () async {
+        '(no leaked reader mode / poll loop) when nothing arrives', () async {
       final manager = _FakeAndroidNfcManager();
       final platform = _FakePlatform()..readers = ['reader-1'];
       final hub = NfcHub(
@@ -453,7 +463,7 @@ void main() {
         ccidSource: CcidSource(_FakePlatform()),
       );
 
-      final states = <CcidConnectionState>[];
+      final states = <NfcConnectionState>[];
       final sub = hub.connectionState().listen(states.add);
       await pumpEventQueue();
 
@@ -473,7 +483,7 @@ void main() {
         ccidSource: CcidSource(_FakePlatform()),
       );
 
-      final states = <CcidConnectionState>[];
+      final states = <NfcConnectionState>[];
       final sub = hub.connectionState().listen(states.add);
       await pumpEventQueue();
 
@@ -493,7 +503,7 @@ void main() {
         ccidSource: CcidSource(_FakePlatform()),
       );
 
-      final states = <CcidConnectionState>[];
+      final states = <NfcConnectionState>[];
       final sub = hub.connectionState().listen(states.add);
       await pumpEventQueue();
 
@@ -520,7 +530,7 @@ void main() {
         ),
       );
 
-      final states = <CcidConnectionState>[];
+      final states = <NfcConnectionState>[];
       final sub = hub.connectionState().listen(states.add);
 
       // Let the CCID poll loop have plenty of chances to tick and emit a
@@ -558,7 +568,8 @@ void main() {
       await sub.cancel();
     });
 
-    test('reflects CcidSource.readerStates() -- a reader with a card shows '
+    test(
+        'reflects CcidSource.readerStates() -- a reader with a card shows '
         'ExternalReaderState(name, true)', () {
       FakeAsync().run((async) {
         final manager = _FakeAndroidNfcManager();
@@ -570,7 +581,7 @@ void main() {
           ccidSource: CcidSource(platform),
         );
 
-        final states = <CcidConnectionState>[];
+        final states = <NfcConnectionState>[];
         final sub = hub.connectionState().listen(states.add);
 
         async.elapse(const Duration(milliseconds: 500));

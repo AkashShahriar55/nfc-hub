@@ -12,7 +12,7 @@ class PcscNfcHub extends NfcHubPlatform {
   final readerCardMap = <String, Card>{};
   var _initialized = false;
 
-  _init() async {
+  Future<void> _init() async {
     if (!_initialized) {
       _initialized = true;
       await context.establish();
@@ -26,10 +26,10 @@ class PcscNfcHub extends NfcHubPlatform {
   }
 
   @override
-  Future<CcidCard> connect(String reader) async {
+  Future<ReaderCard> connect(String reader) async {
     final card = await context.connect(reader, ShareMode.shared, Protocol.any);
     readerCardMap[reader] = card;
-    return CcidCard(reader);
+    return ReaderCard(reader);
   }
 
   @override

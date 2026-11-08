@@ -1,0 +1,67 @@
+name: Bug report
+description: Something in nfc_hub does not behave as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Most nfc_hub defects depend on the exact hardware, so the fields below
+        are required.
+  - type: input
+    id: version
+    attributes:
+      label: nfc_hub version
+      placeholder: 0.8.0
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Android device and version
+      placeholder: Pixel 8, Android 15
+    validations:
+      required: true
+  - type: dropdown
+    id: source
+    attributes:
+      label: Tag source
+      options:
+        - Built-in NFC antenna
+        - USB CCID/PC-SC reader
+        - Both
+    validations:
+      required: true
+  - type: input
+    id: reader
+    attributes:
+      label: Reader model
+      description: Write "n/a" if you only use the built-in antenna.
+      placeholder: ACR122U
+    validations:
+      required: true
+  - type: input
+    id: tag
+    attributes:
+      label: Tag family
+      placeholder: NTAG213, MIFARE Classic 1K, DESFire EV2, FeliCa Lite-S
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: A minimal code sample helps most.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Call `NfcHub().setLogging(enabled: true)` and paste the output.
+      render: text

@@ -2,8 +2,7 @@ import 'package:nfc_hub/src/tag/desfire_info.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('desfireGenerationLabel identifies the original DESFire (MF3ICD40)',
-      () {
+  test('desfireGenerationLabel identifies the original DESFire (MF3ICD40)', () {
     const version = DesfireVersion(
       hardwareVendorId: 0x04,
       hardwareType: 0x01,
@@ -54,7 +53,8 @@ void main() {
     expect(desfireGenerationLabel(version), equals('DESFire EV1'));
   });
 
-  test('desfireGenerationLabel reports an unrecognized combination '
+  test(
+      'desfireGenerationLabel reports an unrecognized combination '
       'explicitly rather than guessing', () {
     const version = DesfireVersion(
       hardwareVendorId: 0x04,

@@ -15,6 +15,7 @@ class NdefRecord {
   /// The raw record payload.
   final Uint8List payload;
 
+  /// Creates a record from its decoded fields.
   NdefRecord({
     required this.tnf,
     required this.type,
