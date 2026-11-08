@@ -25,5 +25,5 @@ flutter:
   plugin:
     platforms:
       android:
-        package: com.cheqplease.nfchub
+        package: com.nsa.nfchub
         pluginClass: NfcHubPlugin

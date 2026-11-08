@@ -1,4 +1,4 @@
-package com.cheqplease.nfchub
+package com.nsa.nfchub
 
 import android.app.Activity
 import android.app.PendingIntent
@@ -831,7 +831,7 @@ class NfcHubPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     }
 
     companion object {
-        private const val ACTION_USB_PERMISSION = "com.cheqplease.nfchub.USB_PERMISSION"
+        private const val ACTION_USB_PERMISSION = "com.nsa.nfchub.USB_PERMISSION"
     }
 
     private data class Reader(

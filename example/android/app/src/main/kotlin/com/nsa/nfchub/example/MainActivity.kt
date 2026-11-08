@@ -1,4 +1,4 @@
-package com.cheqplease.nfchub.example
+package com.nsa.nfchub.example
 
 import io.flutter.embedding.android.FlutterActivity
 

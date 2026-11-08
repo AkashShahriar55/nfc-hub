@@ -1,4 +1,4 @@
-package com.cheqplease.nfchub
+package com.nsa.nfchub
 
 import android.hardware.usb.UsbDeviceConnection
 import android.hardware.usb.UsbEndpoint

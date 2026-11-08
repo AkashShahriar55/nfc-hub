@@ -1,4 +1,4 @@
-package com.cheqplease.nfchub
+package com.nsa.nfchub
 
 import android.app.Activity
 import android.content.Context
