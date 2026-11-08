@@ -1,12 +1,11 @@
-/// nfc_hub — read NFC tags through external CCID readers or (from Plan 3)
-/// the device's built-in NFC antenna, behind one API.
+/// nfc_hub — read NFC tags through external CCID readers or the device's
+/// built-in NFC antenna, behind one API.
 library;
 
 export 'src/nfc_hub_api.dart'
-    show CcidSourceFilter, CcidConnectionState, NfcUnavailableReason;
-export 'src/nfc_hub_base.dart' show NfcHub, CcidCard;
-export 'src/nfc_hub_reader.dart'
-    show NfcHubReader, NfcTag, NfcConnectionState, NfcSource;
+    show NfcSource, NfcConnectionState, NfcUnavailableReason;
+export 'src/nfc_hub_base.dart' show NfcHub, ReaderCard;
+export 'src/nfc_hub_reader.dart' show NfcHubReader, NfcTag;
 export 'src/log.dart' show nfcHubLogging, nfcHubVerboseLogging, nfcLog;
 export 'src/ndef.dart'
     show NdefRecord, parseNdefRecords, parseTlvForNdefMessage;

@@ -18,10 +18,10 @@ class MethodChannelNfcHub extends NfcHubPlatform {
   }
 
   @override
-  Future<CcidCard> connect(String reader) async {
+  Future<ReaderCard> connect(String reader) async {
     final atrHex = await methodChannel.invokeMethod<String>('connect', reader);
     final atr = atrHex != null ? Uint8List.fromList(hex.decode(atrHex)) : null;
-    return CcidCard(reader, atr: atr);
+    return ReaderCard(reader, atr: atr);
   }
 
   @override

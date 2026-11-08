@@ -37,10 +37,10 @@ class _FakePlatform extends NfcHubPlatform {
   final Map<String, String> cardUid = {};
 
   /// Readers holding a card that connects but cannot be identified: connect()
-  /// succeeds with an ATR-less [CcidCard], and every transceive throws -- so
+  /// succeeds with an ATR-less [ReaderCard], and every transceive throws -- so
   /// `identifyTag`'s probing chain deterministically ends in
   /// [UnrecognizedTagException]. Requires `NfcHubPlatform.instance` to be set
-  /// to this fake, since the probes go through [CcidCard.transceive].
+  /// to this fake, since the probes go through [ReaderCard.transceive].
   final Set<String> muteCards = {};
 
   final List<String> listReadersLog = [];
@@ -65,13 +65,13 @@ class _FakePlatform extends NfcHubPlatform {
   }
 
   @override
-  Future<CcidCard> connect(String reader) async {
+  Future<ReaderCard> connect(String reader) async {
     connectLog.add(reader);
-    if (muteCards.contains(reader)) return CcidCard(reader); // no ATR
+    if (muteCards.contains(reader)) return ReaderCard(reader); // no ATR
     if (!cardsPresent.contains(reader)) {
       throw Exception('no card seated in $reader');
     }
-    return CcidCard(reader, atr: _type2Atr);
+    return ReaderCard(reader, atr: _type2Atr);
   }
 
   @override
@@ -823,7 +823,7 @@ void main() {
 
     test(
         'the liveness probe is SKIPPED while the app is actively reading the '
-        'card (recent CcidCard.transceive traffic proves presence)', () {
+        'card (recent ReaderCard.transceive traffic proves presence)', () {
       FakeAsync().run((async) {
         final platform = _FakePlatform()
           ..readers = ['reader-1']
@@ -848,7 +848,7 @@ void main() {
         // completes just before each tick.
         final card = (drivers.single as Type2Tag);
         for (var i = 0; i < 4; i++) {
-          card.readUid(); // issues a transceive through the same CcidCard
+          card.readUid(); // issues a transceive through the same ReaderCard
           async.flushMicrotasks();
           async.elapse(const Duration(milliseconds: 500));
           fakeNow = fakeNow.add(const Duration(milliseconds: 500));
@@ -863,13 +863,13 @@ void main() {
       });
     });
 
-    test('CcidCard serializes concurrent transceives (no interleaving)',
+    test('ReaderCard serializes concurrent transceives (no interleaving)',
         () async {
       final platform = _SlowPlatform();
       NfcHubPlatform.instance = platform;
       addTearDown(() => NfcHubPlatform.instance = null);
 
-      final card = CcidCard('reader-1');
+      final card = ReaderCard('reader-1');
       final first = card.transceive('AA');
       final second = card.transceive('BB');
       platform.release('AA');
@@ -945,13 +945,13 @@ class _SlowConnectFakePlatform extends _FakePlatform {
 }
 
 /// A minimal [NfcHubPlatform] whose [transceive] blocks until [release] is
-/// called for that exact APDU -- used to prove [CcidCard.transceive]
+/// called for that exact APDU -- used to prove [ReaderCard.transceive]
 /// serializes concurrent calls rather than letting a second APDU start
 /// before the first completes.
 ///
 /// [release] can race ahead of [transceive] (e.g. a test calls both
-/// [CcidCard.transceive]s -- which don't actually reach this platform until
-/// a later microtask, since [CcidCard] chains them through a `Future.then`
+/// [ReaderCard.transceive]s -- which don't actually reach this platform until
+/// a later microtask, since [ReaderCard] chains them through a `Future.then`
 /// -- and then calls [release] synchronously right after, before either
 /// gate exists yet). Both [release] and [transceive] use `putIfAbsent` on
 /// the same completer so whichever runs first "arms" the gate and whichever

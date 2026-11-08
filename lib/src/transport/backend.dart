@@ -1,7 +1,7 @@
 import 'transport.dart';
 
 /// A source of typed per-technology transports for one tag. Implemented by
-/// [CcidTransportBackend] (over a `CcidCard`) and `AndroidTransportBackend`
+/// [CcidTransportBackend] (over a `ReaderCard`) and `AndroidTransportBackend`
 /// (over `android.nfc.tech.*`). `identifyFromBackend` builds a driver from
 /// whichever transport its tag family needs.
 abstract class TransportBackend {

@@ -12,35 +12,6 @@ import 'tag/tag_driver.dart';
 /// perform that family's reads.
 typedef NfcTag = TagDriver;
 
-/// Friendly alias over the connection-state type the stream API emits.
-typedef NfcConnectionState = CcidConnectionState;
-
-/// Which source a [NfcHubReader.startSession] listens to. Omit (pass null) for
-/// all sources merged — the seamless default. A thin wrapper over
-/// [CcidSourceFilter].
-@immutable
-class NfcSource {
-  /// Only the phone's built-in NFC antenna.
-  const NfcSource.builtIn()
-      : _reader = null,
-        _isBuiltIn = true;
-
-  /// Only the named CCID/PC-SC reader, exactly as reported by
-  /// [NfcHub.listReaders].
-  const NfcSource.reader(String name)
-      : _reader = name,
-        _isBuiltIn = false;
-
-  final String? _reader;
-  final bool _isBuiltIn;
-
-  /// Maps to the underlying stream-API filter.
-  @visibleForTesting
-  CcidSourceFilter toFilter() => _isBuiltIn
-      ? const CcidSourceFilter.builtInNfc()
-      : CcidSourceFilter.reader(_reader!);
-}
-
 /// A simple, `nfc_manager`-style singleton facade over [NfcHub].
 ///
 /// The common case is three calls: grab [instance], [startSession] with an
@@ -112,7 +83,7 @@ class NfcHubReader {
     _session = null;
     if (previous != null) unawaited(previous.cancel());
 
-    _session = _hub.tagStream(from: from?.toFilter()).listen(
+    _session = _hub.tagStream(from: from).listen(
       (tag) {
         _chain = _chain.then((_) async {
           try {

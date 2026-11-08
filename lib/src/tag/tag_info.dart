@@ -63,7 +63,7 @@ class CapabilityContainer {
 /// the chip model of an NTAG21x / Mifare Ultralight family tag.
 ///
 /// This is a manufacturer-specific command, not part of the standard NFC
-/// Forum Type 2 Tag operation set — see `CcidCard.readChipVersion`.
+/// Forum Type 2 Tag operation set — see `ReaderCard.readChipVersion`.
 class ChipVersion {
   final int headerByte;
   final int vendorId;

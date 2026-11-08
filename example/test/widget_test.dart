@@ -21,7 +21,7 @@ void main() {
         home: Scaffold(
           body: HarnessHome(
             tags: Stream<TagDriver>.empty(),
-            connectionState: Stream<CcidConnectionState>.empty(),
+            connectionState: Stream<NfcConnectionState>.empty(),
           ),
         ),
       ),

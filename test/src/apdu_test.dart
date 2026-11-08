@@ -19,7 +19,7 @@ class _FakeCcidPlatform extends NfcHubPlatform {
   Future<List<String>> listReaders() async => ['fake-reader'];
 
   @override
-  Future<CcidCard> connect(String reader) async => CcidCard(reader);
+  Future<ReaderCard> connect(String reader) async => ReaderCard(reader);
 
   @override
   Future<void> disconnect(String reader) async {}
@@ -54,7 +54,7 @@ void main() {
       NfcHubPlatform.instance = _FakeCcidPlatform({
         '00A4': '${hex.encode([0x01, 0x02])}9000'
       });
-      final card = CcidCard('fake-reader');
+      final card = ReaderCard('fake-reader');
 
       final data = await transceiveChecked(card, '00A4');
 
@@ -65,7 +65,7 @@ void main() {
       NfcHubPlatform.instance = _FakeCcidPlatform({
         '00A4': '${hex.encode([0x01])}6A82'
       });
-      final card = CcidCard('fake-reader');
+      final card = ReaderCard('fake-reader');
 
       expect(() => transceiveChecked(card, '00A4'), throwsException);
     });
@@ -78,7 +78,7 @@ void main() {
       NfcHubPlatform.instance = _FakeCcidPlatform({
         'FF00000003AABBCC': '${hex.encode([0x01, 0x02])}9000'
       });
-      final card = CcidCard('fake-reader');
+      final card = ReaderCard('fake-reader');
 
       final data =
           await transceiveEscape(card, Uint8List.fromList([0xAA, 0xBB, 0xCC]));

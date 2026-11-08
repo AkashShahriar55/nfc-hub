@@ -36,7 +36,7 @@ class _FakeCcidPlatform extends NfcHubPlatform {
   Future<List<String>> listReaders() async => ['fake-reader'];
 
   @override
-  Future<CcidCard> connect(String reader) async => CcidCard(reader);
+  Future<ReaderCard> connect(String reader) async => ReaderCard(reader);
 
   @override
   Future<void> disconnect(String reader) async {}
@@ -67,7 +67,7 @@ class _SequencedFakeCcidPlatform extends NfcHubPlatform {
   Future<List<String>> listReaders() async => ['fake-reader'];
 
   @override
-  Future<CcidCard> connect(String reader) async => CcidCard(reader);
+  Future<ReaderCard> connect(String reader) async => ReaderCard(reader);
 
   @override
   Future<void> disconnect(String reader) async {}
@@ -111,7 +111,7 @@ void main() {
       // back to capability probing (lib/src/tag/detection.dart's
       // _identifyByProbing) to reach a Type2Tag -- exercising the same
       // detection path a real headless CCID connect would take.
-      final card = CcidCard('fake-reader');
+      final card = ReaderCard('fake-reader');
       final driver = await identifyTag(card);
 
       expect(driver, isA<Type2Tag>());
@@ -170,7 +170,7 @@ void main() {
       // above -- exercising the same detection path a real headless CCID
       // connect would take. The probe order (Type 2 CC, ISO-DEP SELECT,
       // then MIFARE) means both prior probes must fail first.
-      final card = CcidCard('fake-reader');
+      final card = ReaderCard('fake-reader');
       final driver = await identifyTag(card);
 
       expect(driver, isA<MifareClassicTag>());
@@ -222,7 +222,7 @@ void main() {
         0x3B, 0x8F, 0x80, 0x01, //
         0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0x00, 0x01,
       ]);
-      final card = CcidCard('fake-reader', atr: atr);
+      final card = ReaderCard('fake-reader', atr: atr);
 
       final block0 = List.filled(16, 0x11);
 
@@ -274,7 +274,7 @@ void main() {
         0x3B, 0x8F, 0x80, 0x01, //
         0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0xF0, 0x11,
       ]);
-      final card = CcidCard('fake-reader', atr: atr);
+      final card = ReaderCard('fake-reader', atr: atr);
 
       const idmHex = 'AABBCCDDEE001122';
       // idm is read via the standard PC/SC Get UID pseudo-APDU, which
@@ -331,7 +331,7 @@ void main() {
       // generic ISO-DEP branch.
       final atr = Uint8List.fromList(
           [0x3B, 0x8A, 0x80, 0x01, 0x50, 0x00, 0x00, 0x00, 0x00, 0x00]);
-      final card = CcidCard('fake-reader', atr: atr);
+      final card = ReaderCard('fake-reader', atr: atr);
 
       // Building the resolved IsoDepTransport does a real PN532 poll for
       // the UID (InListPassiveTarget): numTargets=01, Tg=01, ATQA=0344,
@@ -425,7 +425,7 @@ void main() {
       });
       NfcHubPlatform.instance = fake;
 
-      final card = CcidCard('fake-reader');
+      final card = ReaderCard('fake-reader');
       final driver = await identifyTag(card);
 
       expect(driver, isA<TypeBTag>());
@@ -465,7 +465,7 @@ void main() {
     // Tasks 3-7 moved Type2Tag, MifareClassicTag, FelicaTag, and TypeBTag
     // onto typed transports, and each one lost its ATR in the process
     // (hardcoded to null). Task 8 has identifyTag() -- which holds the
-    // CcidCard and therefore the real ATR -- inject it back into the driver
+    // ReaderCard and therefore the real ATR -- inject it back into the driver
     // at construction time. These tests prove readTagInfo().atr actually
     // carries the card's ATR through identifyTag(), for all five driver
     // families (four restored here, plus IsoDepTag's pre-existing path via
@@ -479,7 +479,7 @@ void main() {
         0x3B, 0x8F, 0x80, 0x01, //
         0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0x00, 0x03,
       ]);
-      final card = CcidCard('fake-reader', atr: atr);
+      final card = ReaderCard('fake-reader', atr: atr);
 
       NfcHubPlatform.instance = _FakeCcidPlatform({
         'FFCA000000': '040102039000', // readUid()
@@ -502,7 +502,7 @@ void main() {
         0x3B, 0x8F, 0x80, 0x01, //
         0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0x00, 0x01,
       ]);
-      final card = CcidCard('fake-reader', atr: atr);
+      final card = ReaderCard('fake-reader', atr: atr);
 
       // PN532 poll (Type A): ATQA 0004, SAK 08 (1K), UID 01020304 -- the
       // transport build itself does this I/O when constructed from the ATR
@@ -526,7 +526,7 @@ void main() {
         0x3B, 0x8F, 0x80, 0x01, //
         0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0xF0, 0x11,
       ]);
-      final card = CcidCard('fake-reader', atr: atr);
+      final card = ReaderCard('fake-reader', atr: atr);
 
       // readTagInfo() awaits both idm (Get UID pseudo-APDU) and pmm (a
       // FeliCa polling command wrapped in the PN532 InDataExchange escape)
@@ -563,7 +563,7 @@ void main() {
       // regression test in the MIFARE Classic group above. The ATR is now
       // the stronger signal and always wins once matched.)
       final atr = Uint8List.fromList([0x3B, 0x8A]);
-      final card = CcidCard('fake-reader', atr: atr);
+      final card = ReaderCard('fake-reader', atr: atr);
 
       final atqb = [
         0x50, 0xAA, 0xBB, 0xCC, 0xDD, //
@@ -601,7 +601,7 @@ void main() {
         'and TCK = XOR(T0, TD1, historical bytes) = 0x41)', () async {
       final atr =
           Uint8List.fromList([0x3B, 0x83, 0x01, 0x80, 0x4F, 0x0C, 0x41]);
-      final card = CcidCard('fake-reader', atr: atr);
+      final card = ReaderCard('fake-reader', atr: atr);
 
       NfcHubPlatform.instance = _FakeCcidPlatform({
         'FF00000004D44A0100': 'D54B009000', // PN532 poll: no target found.

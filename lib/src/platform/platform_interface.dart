@@ -51,7 +51,7 @@ abstract class NfcHubPlatform extends PlatformInterface {
     throw UnimplementedError('transceive() has not been implemented.');
   }
 
-  Future<CcidCard> connect(String reader) {
+  Future<ReaderCard> connect(String reader) {
     throw UnimplementedError('connect() has not been implemented.');
   }
 

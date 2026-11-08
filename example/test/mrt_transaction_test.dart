@@ -12,7 +12,7 @@ void main() {
   group('decodeTimestamp', () {
     test('decodes a real card-recorded timestamp (hour/day/month/year)', () {
       // From a real Dhaka Metro transaction block: bytes 4-6 = 34 8A 90.
-      final value = (0x34 << 16) | (0x8A << 8) | 0x90;
+      const value = (0x34 << 16) | (0x8A << 8) | 0x90;
 
       final decoded = decodeTimestamp(value);
 

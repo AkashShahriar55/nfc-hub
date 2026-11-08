@@ -13,7 +13,7 @@ import 'transport.dart';
 /// reader. This is the ONLY place the ACR122U's PC/SC pseudo-APDU and
 /// PN532 escape dialect lives; drivers above it are transport-agnostic.
 class CcidTransportBackend implements TransportBackend {
-  final CcidCard card;
+  final ReaderCard card;
 
   CcidTransportBackend(this.card);
 
@@ -64,7 +64,7 @@ String _hex2(int v) => v.toRadixString(16).padLeft(2, '0');
 /// One retry: a single transient escape-command failure (a probe racing
 /// the card settling into the field) must not cost the whole session its
 /// uid/atqa/sak identity.
-Future<PassiveTargetTypeA?> _pollTypeAResilient(CcidCard card) async {
+Future<PassiveTargetTypeA?> _pollTypeAResilient(ReaderCard card) async {
   for (var attempt = 0; attempt < 2; attempt++) {
     try {
       final target = await pollTypeA(card);
@@ -84,7 +84,7 @@ Future<PassiveTargetTypeA?> _pollTypeAResilient(CcidCard card) async {
 /// T=0 (T=1, per PC/SC Part 3's synchronous/contactless-card convention),
 /// and ISO7816-3 requires TCK whenever any protocol other than T=0 is
 /// indicated -- which is the only kind of ATR this plugin ever parses (see
-/// [CcidCard.atr]). It is NOT a general-purpose ISO7816-3 ATR parser: a
+/// [ReaderCard.atr]). It is NOT a general-purpose ISO7816-3 ATR parser: a
 /// real T=0-only smart card ATR has no TCK at all, and running this
 /// function on one would mis-slice the historical bytes by one byte
 /// (silently including/excluding the wrong trailing byte rather than
@@ -97,7 +97,7 @@ Uint8List? historicalBytesFromAtr(Uint8List? atr) {
 }
 
 class _CcidType2Transport implements Type2Transport {
-  final CcidCard card;
+  final ReaderCard card;
 
   _CcidType2Transport(this.card);
 
@@ -131,7 +131,7 @@ class _CcidType2Transport implements Type2Transport {
 }
 
 class _CcidMifareClassicTransport implements MifareClassicTransport {
-  final CcidCard card;
+  final ReaderCard card;
   final PassiveTargetTypeA? target;
 
   static const int _keySlot = 0x00;
@@ -176,7 +176,7 @@ class _CcidMifareClassicTransport implements MifareClassicTransport {
 }
 
 class _CcidNfcFTransport implements NfcFTransport {
-  final CcidCard card;
+  final ReaderCard card;
 
   Uint8List? _idm;
   Uint8List? _pmm;
@@ -231,7 +231,7 @@ class _CcidNfcFTransport implements NfcFTransport {
 }
 
 class _CcidIsoDepTransport implements IsoDepTransport {
-  final CcidCard card;
+  final ReaderCard card;
   final Uint8List _uid;
 
   _CcidIsoDepTransport(this.card, this._uid);
@@ -253,7 +253,7 @@ class _CcidIsoDepTransport implements IsoDepTransport {
 }
 
 class _CcidNfcBTransport implements NfcBTransport {
-  final CcidCard card;
+  final ReaderCard card;
 
   @override
   final Uint8List atqb;

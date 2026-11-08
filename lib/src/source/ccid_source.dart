@@ -40,7 +40,7 @@ enum _ReaderStatus { empty, occupied }
 /// A [TagDriver] paired with the name of the CCID reader that produced it.
 ///
 /// [CcidSource] itself has no notion of "filtering" -- that's Task 7's
-/// concern (`NfcHub.tagStream(from: CcidSourceFilter.reader(...))`). This
+/// concern (`NfcHub.tagStream(from: NfcSource.reader(...))`). This
 /// type exists purely so a consumer of [CcidSource.taggedTags] can tell
 /// which reader each driver came from without [CcidSource] needing to know
 /// about filters at all.
@@ -103,7 +103,7 @@ const _probeApdu = 'FFCA000000';
 ///    [tags]. A throw means still no card -- stays **empty**, nothing
 ///    emitted.
 ///  - **occupied**: sends the harmless [_probeApdu] through the occupied
-///    reader's [CcidCard] (so it's serialized with, and skipped entirely
+///    reader's [ReaderCard] (so it's serialized with, and skipped entirely
 ///    during, any in-flight driver transceive -- see [_probeStillPresent])
 ///    as a liveness check. Success means the same card is still seated --
 ///    nothing is re-emitted (a card that stays put emits exactly once). A
@@ -178,7 +178,7 @@ class CcidSource implements TagSource {
 
   /// Clock used to decide whether a card has had recent activity (see
   /// [_probeStillPresent]). Overridable purely for testability -- shared
-  /// with each occupied reader's [CcidCard] (wired in [_tryConnect]) so both
+  /// with each occupied reader's [ReaderCard] (wired in [_tryConnect]) so both
   /// sides compare against the same notion of "now".
   final DateTime Function() _now;
 
@@ -210,14 +210,14 @@ class CcidSource implements TagSource {
   /// the class doc for the exactly-once contract.
   final Map<String, _HeldDriver> _occupiedDrivers = {};
 
-  /// The [CcidCard] backing every currently-**occupied** reader, keyed by
+  /// The [ReaderCard] backing every currently-**occupied** reader, keyed by
   /// reader name. Populated alongside [_occupiedDrivers] in [_tryConnect] and
   /// cleared everywhere [_occupiedDrivers] is cleared. [_probeStillPresent]
   /// routes its liveness probe through this card (serialized with any
   /// in-flight driver transceive) rather than the raw platform, and consults
-  /// its [CcidCard.lastActivity] to skip the probe while the app is actively
+  /// its [ReaderCard.lastActivity] to skip the probe while the app is actively
   /// reading.
-  final Map<String, CcidCard> _occupiedCards = {};
+  final Map<String, ReaderCard> _occupiedCards = {};
 
   /// The occupied card's Get-UID probe response (hex), captured at connect
   /// time and keyed by reader name. Lets [_probeStillPresent] tell "the same
@@ -253,7 +253,7 @@ class CcidSource implements TagSource {
 
   /// The same tags as [tags], but paired with the reader that produced each
   /// one -- see [ReaderTaggedDriver]. Used by Task 7's unified stream to
-  /// implement `CcidSourceFilter.reader(name)`, by passing that name as
+  /// implement `NfcSource.reader(name)`, by passing that name as
   /// [reader].
   ///
   /// With a non-null [reader], only that reader's drivers are delivered --
@@ -441,7 +441,7 @@ class CcidSource implements TagSource {
   /// [TagDriver]) if a card was just seated; false if the reader is still
   /// empty.
   Future<bool> _tryConnect(String reader) async {
-    final CcidCard card;
+    final ReaderCard card;
     try {
       card = await _platform.connect(reader);
     } on PlatformException catch (e) {
@@ -466,7 +466,7 @@ class CcidSource implements TagSource {
     // Share one clock between this card and the source, so lastActivity
     // (stamped on the card) and _now() (read by _probeStillPresent) agree on
     // "now" -- matters under a test's injected fake clock. CcidSource is the
-    // one sanctioned production writer of CcidCard.now (the @visibleForTesting
+    // one sanctioned production writer of ReaderCard.now (the @visibleForTesting
     // annotation exists to keep APPS from setting it), hence the ignore.
     // ignore: invalid_use_of_visible_for_testing_member
     card.now = _now;
@@ -522,7 +522,7 @@ class CcidSource implements TagSource {
   ///
   /// The recent-activity skip below narrows -- but does not eliminate --
   /// the probe-mid-conversation risk (F3's residual): a single in-flight
-  /// frame that outlasts [pollInterval] since [CcidCard.lastActivity] can
+  /// frame that outlasts [pollInterval] since [ReaderCard.lastActivity] can
   /// still let a tick enqueue a probe that lands between two chained frames
   /// of the app's command sequence (the per-card serialization only orders
   /// it after the frame in flight, not after the whole sequence).

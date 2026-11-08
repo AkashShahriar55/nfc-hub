@@ -6,7 +6,7 @@ import 'dart:typed_data';
 /// Each driver wraps a typed transport (see `../transport/transport.dart`)
 /// and exposes only the read operations that make sense for that tag
 /// family. Drivers are transport-agnostic: the same driver serves a card on
-/// a USB CCID reader and (from Plan 3) a tag on the device's own antenna.
+/// a USB CCID reader and a tag on the device's own antenna.
 abstract class TagDriver {
   const TagDriver();
 

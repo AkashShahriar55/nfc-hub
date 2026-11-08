@@ -13,15 +13,15 @@ import 'tag/tag_driver.dart';
 /// everyone else -- the default (`null`, or omitting `from` entirely) still
 /// yields every source merged.
 @immutable
-class CcidSourceFilter {
+class NfcSource {
   /// Restricts to tags discovered by the phone's built-in NFC antenna.
-  const CcidSourceFilter.builtInNfc()
+  const NfcSource.builtIn()
       : _builtInNfc = true,
         _readerName = null;
 
   /// Restricts to tags read through the named CCID/PC-SC reader, exactly as
   /// reported by [NfcHub.listReaders]/`NfcHubPlatform.listReaders`.
-  const CcidSourceFilter.reader(String name)
+  const NfcSource.reader(String name)
       : _builtInNfc = false,
         _readerName = name;
 
@@ -30,7 +30,7 @@ class CcidSourceFilter {
 
   @override
   bool operator ==(Object other) =>
-      other is CcidSourceFilter &&
+      other is NfcSource &&
       other._builtInNfc == _builtInNfc &&
       other._readerName == _readerName;
 
@@ -38,15 +38,14 @@ class CcidSourceFilter {
   int get hashCode => Object.hash(_builtInNfc, _readerName);
 
   @override
-  String toString() => _builtInNfc
-      ? 'CcidSourceFilter.builtInNfc()'
-      : 'CcidSourceFilter.reader($_readerName)';
+  String toString() =>
+      _builtInNfc ? 'NfcSource.builtIn()' : 'NfcSource.reader($_readerName)';
 }
 
 /// Why the phone's built-in NFC antenna is unavailable, as surfaced on
-/// [CcidConnectionState.builtInNfcReason]. [none] when it IS available.
+/// [NfcConnectionState.builtInNfcReason]. [none] when it IS available.
 enum NfcUnavailableReason {
-  /// The antenna is available -- [CcidConnectionState.builtInNfcAvailable]
+  /// The antenna is available -- [NfcConnectionState.builtInNfcAvailable]
   /// is true.
   none,
 
@@ -61,8 +60,8 @@ enum NfcUnavailableReason {
 /// the phone's built-in NFC antenna is available, and the live per-reader
 /// presence of every attached CCID/PC-SC reader.
 @immutable
-class CcidConnectionState {
-  const CcidConnectionState({
+class NfcConnectionState {
+  const NfcConnectionState({
     required this.builtInNfcAvailable,
     required this.builtInNfcReason,
     required this.externalReaders,
@@ -81,7 +80,7 @@ class CcidConnectionState {
 
   @override
   bool operator ==(Object other) =>
-      other is CcidConnectionState &&
+      other is NfcConnectionState &&
       other.builtInNfcAvailable == builtInNfcAvailable &&
       other.builtInNfcReason == builtInNfcReason &&
       listEquals(other.externalReaders, externalReaders);
@@ -94,7 +93,7 @@ class CcidConnectionState {
       );
 
   @override
-  String toString() => 'CcidConnectionState(builtInNfcAvailable: '
+  String toString() => 'NfcConnectionState(builtInNfcAvailable: '
       '$builtInNfcAvailable, builtInNfcReason: $builtInNfcReason, '
       'externalReaders: $externalReaders)';
 }
@@ -108,14 +107,14 @@ class CcidConnectionState {
 /// care, which underlying source is doing the work. A [filter] narrows to
 /// exactly one source, and only that source is ever started:
 ///
-///  - [CcidSourceFilter.builtInNfc]: only [androidSource.tags] is
+///  - [NfcSource.builtIn]: only [androidSource.tags] is
 ///    subscribed.
-///  - [CcidSourceFilter.reader]: only [ccidSource.taggedTags] is
+///  - [NfcSource.reader]: only [ccidSource.taggedTags] is
 ///    subscribed, filtered down to the named reader.
 Stream<TagDriver> mergeTagStreams({
   required AndroidNfcSource androidSource,
   required CcidSource ccidSource,
-  CcidSourceFilter? filter,
+  NfcSource? filter,
 }) {
   late final StreamController<TagDriver> controller;
   final subs = <StreamSubscription<Object?>>[];
@@ -160,19 +159,19 @@ Stream<TagDriver> mergeTagStreams({
 }
 
 /// Combines [manager]'s built-in-NFC availability with [ccidSource]'s
-/// per-reader presence into the one [CcidConnectionState] stream
+/// per-reader presence into the one [NfcConnectionState] stream
 /// `NfcHub.connectionState` exposes.
 ///
 /// On listen: fetches the current [NfcState] via [manager.getNfcState],
 /// subscribes to further changes via [manager.nfcStateChanges], and
 /// subscribes to [ccidSource.readerStates] -- emitting a fresh
-/// [CcidConnectionState] whenever either side changes. Both subscriptions
+/// [NfcConnectionState] whenever either side changes. Both subscriptions
 /// are cancelled once the last listener of the returned stream cancels.
-Stream<CcidConnectionState> combineConnectionState({
+Stream<NfcConnectionState> combineConnectionState({
   required AndroidNfcManager manager,
   required CcidSource ccidSource,
 }) {
-  late final StreamController<CcidConnectionState> controller;
+  late final StreamController<NfcConnectionState> controller;
   StreamSubscription<NfcState>? nfcSub;
   StreamSubscription<List<ExternalReaderState>>? readerSub;
 
@@ -195,7 +194,7 @@ Stream<CcidConnectionState> combineConnectionState({
   }
 
   void emit() {
-    controller.add(CcidConnectionState(
+    controller.add(NfcConnectionState(
       builtInNfcAvailable: builtInAvailable,
       builtInNfcReason: builtInReason,
       externalReaders: externalReaders,
@@ -241,7 +240,7 @@ Stream<CcidConnectionState> combineConnectionState({
     readerSub = null;
   }
 
-  controller = StreamController<CcidConnectionState>.broadcast(
+  controller = StreamController<NfcConnectionState>.broadcast(
     onListen: () => unawaited(start()),
     onCancel: stop,
   );

@@ -18,23 +18,23 @@ class _FakeTag extends TagDriver {
 /// exposes a controllable tag stream, and counts passthrough calls.
 class _FakeNfcHub extends NfcHub {
   final tagController = StreamController<TagDriver>.broadcast();
-  final stateController = StreamController<CcidConnectionState>.broadcast();
+  final stateController = StreamController<NfcConnectionState>.broadcast();
 
-  CcidSourceFilter? lastFrom;
+  NfcSource? lastFrom;
   bool tagStreamCalled = false;
   bool availableReturn = true;
   int openNfcSettingsCalls = 0;
   int connectionStateCalls = 0;
 
   @override
-  Stream<TagDriver> tagStream({CcidSourceFilter? from}) {
+  Stream<TagDriver> tagStream({NfcSource? from}) {
     tagStreamCalled = true;
     lastFrom = from;
     return tagController.stream;
   }
 
   @override
-  Stream<CcidConnectionState> connectionState() {
+  Stream<NfcConnectionState> connectionState() {
     connectionStateCalls++;
     return stateController.stream;
   }
@@ -81,7 +81,7 @@ class _SeatedCardHub extends NfcHub {
   });
 
   @override
-  Stream<TagDriver> tagStream({CcidSourceFilter? from}) => _controller.stream;
+  Stream<TagDriver> tagStream({NfcSource? from}) => _controller.stream;
 
   /// Simulates a tap landing while a session may or may not already be
   /// listening.
@@ -93,16 +93,6 @@ class _SeatedCardHub extends NfcHub {
 }
 
 void main() {
-  test('NfcSource.builtIn() maps to CcidSourceFilter.builtInNfc()', () {
-    expect(const NfcSource.builtIn().toFilter(),
-        equals(const CcidSourceFilter.builtInNfc()));
-  });
-
-  test('NfcSource.reader(name) maps to CcidSourceFilter.reader(name)', () {
-    expect(const NfcSource.reader('ACR122U').toFilter(),
-        equals(const CcidSourceFilter.reader('ACR122U')));
-  });
-
   test('isAvailable() delegates to the underlying NfcHub', () async {
     final hub = _FakeNfcHub()..availableReturn = false;
     final reader = NfcHubReader.forTesting(hub);
@@ -373,7 +363,7 @@ void main() {
         onDiscovered: (_) {}, from: const NfcSource.reader('R1'));
 
     expect(hub.tagStreamCalled, isTrue);
-    expect(hub.lastFrom, equals(const CcidSourceFilter.reader('R1')));
+    expect(hub.lastFrom, equals(const NfcSource.reader('R1')));
   });
 
   test('no from: passes null to the underlying tagStream (all sources)', () {

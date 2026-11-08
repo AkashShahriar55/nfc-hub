@@ -21,7 +21,7 @@ class HarnessHome extends StatefulWidget {
   const HarnessHome({super.key, this.tags, this.connectionState});
 
   final Stream<TagDriver>? tags;
-  final Stream<CcidConnectionState>? connectionState;
+  final Stream<NfcConnectionState>? connectionState;
 
   @override
   State<HarnessHome> createState() => _HarnessHomeState();
@@ -55,7 +55,7 @@ class _HarnessHomeState extends State<HarnessHome> {
 
   /// The connection-state stream, resolved once (not per build, which would
   /// hand ConnectionStatusBar a fresh stream it ignores after the first).
-  late final Stream<CcidConnectionState> _statesStream =
+  late final Stream<NfcConnectionState> _statesStream =
       widget.connectionState ?? _hub.connectionState();
 
   @override

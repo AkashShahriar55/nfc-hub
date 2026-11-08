@@ -27,7 +27,7 @@ class _FakePlatform extends NfcHubPlatform {
   Future<List<String>> listReaders() async => List.of(readers);
 
   @override
-  Future<CcidCard> connect(String reader) async =>
+  Future<ReaderCard> connect(String reader) async =>
       throw StateError('connect() must not be called by isAvailable()');
 
   @override

@@ -8,7 +8,7 @@ import 'package:nfc_hub_example/connection_status_bar.dart';
 void main() {
   testWidgets('disabled NFC shows an Enable button that calls onEnableNfc',
       (tester) async {
-    final controller = StreamController<CcidConnectionState>.broadcast();
+    final controller = StreamController<NfcConnectionState>.broadcast();
     var enableCalled = false;
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
@@ -18,7 +18,7 @@ void main() {
         ),
       ),
     ));
-    controller.add(const CcidConnectionState(
+    controller.add(const NfcConnectionState(
       builtInNfcAvailable: false,
       builtInNfcReason: NfcUnavailableReason.disabled,
       externalReaders: [],
@@ -32,11 +32,11 @@ void main() {
 
   testWidgets('shows an attached reader with card-present state',
       (tester) async {
-    final controller = StreamController<CcidConnectionState>.broadcast();
+    final controller = StreamController<NfcConnectionState>.broadcast();
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(body: ConnectionStatusBar(states: controller.stream)),
     ));
-    controller.add(const CcidConnectionState(
+    controller.add(const NfcConnectionState(
       builtInNfcAvailable: true,
       builtInNfcReason: NfcUnavailableReason.none,
       externalReaders: [ExternalReaderState('ACR122U', true)],
@@ -47,11 +47,11 @@ void main() {
   });
 
   testWidgets('NFC ready shows no Enable button', (tester) async {
-    final controller = StreamController<CcidConnectionState>.broadcast();
+    final controller = StreamController<NfcConnectionState>.broadcast();
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(body: ConnectionStatusBar(states: controller.stream)),
     ));
-    controller.add(const CcidConnectionState(
+    controller.add(const NfcConnectionState(
       builtInNfcAvailable: true,
       builtInNfcReason: NfcUnavailableReason.none,
       externalReaders: [],

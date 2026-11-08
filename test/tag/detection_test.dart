@@ -20,7 +20,7 @@ class _FakeCcidPlatform extends NfcHubPlatform {
   Future<List<String>> listReaders() async => ['fake-reader'];
 
   @override
-  Future<CcidCard> connect(String reader) async => CcidCard(reader);
+  Future<ReaderCard> connect(String reader) async => ReaderCard(reader);
 
   @override
   Future<void> disconnect(String reader) async {}
@@ -42,7 +42,7 @@ void main() {
         0x3B, 0x8F, 0x80, 0x01, //
         0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0x00, 0x03,
       ]);
-      final card = CcidCard('fake-reader', atr: atr);
+      final card = ReaderCard('fake-reader', atr: atr);
 
       final driver = await identifyTag(card);
 
@@ -54,7 +54,7 @@ void main() {
         0x3B, 0x8F, 0x80, 0x01, //
         0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0x00, 0x01,
       ]);
-      final card = CcidCard('fake-reader', atr: atr);
+      final card = ReaderCard('fake-reader', atr: atr);
       // The ATR alone identifies the family, but building a MifareClassicTag
       // now also requires a real PN532 poll (MifareClassicTransport exposes
       // uid/atqa/sak as sync getters) -- script its response: ATQA 0004,
@@ -73,7 +73,7 @@ void main() {
         0x3B, 0x8F, 0x80, 0x01, //
         0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0x00, 0x02,
       ]);
-      final card = CcidCard('fake-reader', atr: atr);
+      final card = ReaderCard('fake-reader', atr: atr);
       // Same as above, but SAK 18 (4K).
       NfcHubPlatform.instance = _FakeCcidPlatform({
         'FF00000004D44A0100': 'D54B010100041804010203049000',
@@ -94,7 +94,7 @@ void main() {
         0x3B, 0x8F, 0x80, 0x01, //
         0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0xF0, 0x11,
       ]);
-      final card = CcidCard('fake-reader', atr: atr);
+      final card = ReaderCard('fake-reader', atr: atr);
 
       final driver = await identifyTag(card);
 
@@ -114,7 +114,7 @@ void main() {
         0x3B, 0x8F, 0x80, 0x01, //
         0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0x00, 0x01,
       ]);
-      final card = CcidCard('fake-reader', atr: atr);
+      final card = ReaderCard('fake-reader', atr: atr);
       // NbTg=00 -- the PN532 reports no Type A target answered the poll.
       // MIFARE's actual operations (Load Key / General Authenticate) are
       // standard PC/SC Part 3 pseudo-APDUs needing no PN532 dialect, so
@@ -142,7 +142,7 @@ void main() {
     test('treats an unmarked ATR as a generic ISO-DEP card', () async {
       final atr = Uint8List.fromList(
           [0x3B, 0x8A, 0x80, 0x01, 0x50, 0x00, 0x00, 0x00, 0x00, 0x00]);
-      final card = CcidCard('fake-reader', atr: atr);
+      final card = ReaderCard('fake-reader', atr: atr);
       // Building an IsoDepTransport now also does a real PN532 poll (for
       // its UID), same as the MIFARE Classic ATR case above -- script a
       // "no target found" (NbTg=00) response, since this test only cares
@@ -163,7 +163,7 @@ void main() {
         'FFCA000000': '00019000',
         'FFB0000304': 'E11006009000',
       });
-      final card = CcidCard('fake-reader');
+      final card = ReaderCard('fake-reader');
 
       final driver = await identifyTag(card);
 
@@ -184,7 +184,7 @@ void main() {
         // authenticate, the fake would throw -- so this proves detection does
         // NOT depend on default-key auth succeeding.
       });
-      final card = CcidCard('fake-reader');
+      final card = ReaderCard('fake-reader');
 
       final driver = await identifyTag(card);
 
@@ -201,7 +201,7 @@ void main() {
         // only cares about the resolved driver type.
         'FF00000004D44A0100': 'D54B009000',
       });
-      final card = CcidCard('fake-reader');
+      final card = ReaderCard('fake-reader');
 
       final driver = await identifyTag(card);
 
@@ -223,7 +223,7 @@ void main() {
         // escape dialect would return, instead of a "no target found" SW.
         'FF00000004D44A0100': '6D00',
       });
-      final card = CcidCard('fake-reader');
+      final card = ReaderCard('fake-reader');
 
       final driver = await identifyTag(card);
 
@@ -232,7 +232,7 @@ void main() {
 
     test('throws UnrecognizedTagException when nothing responds', () async {
       NfcHubPlatform.instance = _FakeCcidPlatform({'FFCA000000': null});
-      final card = CcidCard('fake-reader');
+      final card = ReaderCard('fake-reader');
 
       expect(
         () => identifyTag(card),
@@ -256,7 +256,7 @@ void main() {
         // (MIFARE Classic 1K).
         'FF00000004D44A0100': 'D54B010100040804AABBCCDD9000',
       });
-      final card = CcidCard('fake-reader');
+      final card = ReaderCard('fake-reader');
 
       final driver = await identifyTag(card);
 
@@ -278,7 +278,7 @@ void main() {
         // the card produces that, unlike the reader-level 6300/6F00 SWs.
         '00A4040000': '6A82',
       });
-      final card = CcidCard('fake-reader');
+      final card = ReaderCard('fake-reader');
 
       final driver = await identifyTag(card);
 
@@ -298,7 +298,7 @@ void main() {
         // '00A4040000' (SELECT) and the Type A poll are deliberately unmapped:
         // the fake throws for them, so ISO-DEP and MIFARE probes fail first.
       });
-      final card = CcidCard('fake-reader');
+      final card = ReaderCard('fake-reader');
 
       final driver = await identifyTag(card);
 
@@ -320,7 +320,7 @@ void main() {
         // and the Type B poll are all unmapped -> the fake throws -> every
         // family probe fails. The card must NOT come back as FelicaTag.
       });
-      final card = CcidCard('fake-reader');
+      final card = ReaderCard('fake-reader');
 
       await expectLater(
         identifyTag(card),
@@ -333,7 +333,7 @@ void main() {
         'every probe outcome, so it is diagnosable from an on-screen error '
         'alone', () async {
       NfcHubPlatform.instance = _FakeCcidPlatform({'FFCA000000': null});
-      final card = CcidCard('fake-reader');
+      final card = ReaderCard('fake-reader');
 
       try {
         await identifyTag(card);
@@ -351,7 +351,7 @@ void main() {
         'FFCA000000': null,
         'FF00000004D44A0103': 'D54B' '01' '01' '${'11' * 12}' '00' '9000',
       });
-      final card = CcidCard('fake-reader');
+      final card = ReaderCard('fake-reader');
 
       final driver = await identifyTag(card);
 

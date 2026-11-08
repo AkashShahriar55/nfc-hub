@@ -17,7 +17,7 @@ Uint8List? stripAndCheckSw(String? responseHex) {
 
 /// Sends [capdu] through [card] and returns the response data, throwing if
 /// the response is missing or its status word isn't `9000`.
-Future<Uint8List> transceiveChecked(CcidCard card, String capdu) async {
+Future<Uint8List> transceiveChecked(ReaderCard card, String capdu) async {
   final data = stripAndCheckSw(await card.transceive(capdu));
   if (data == null) {
     throw Exception('Failed to read tag (bad response to $capdu)');
@@ -28,7 +28,7 @@ Future<Uint8List> transceiveChecked(CcidCard card, String capdu) async {
 /// Wraps [payload] in the reader's direct-transmit escape pseudo-APDU
 /// (`FF 00 00 00 <Lc> <data>`) and returns the checked response data
 /// (status-word-stripped, requiring a `9000` success).
-Future<Uint8List> transceiveEscape(CcidCard card, Uint8List payload) {
+Future<Uint8List> transceiveEscape(ReaderCard card, Uint8List payload) {
   final lcHex = payload.length.toRadixString(16).padLeft(2, '0');
   final dataHex = hex.encode(payload);
   final capdu = 'FF000000$lcHex$dataHex'.toUpperCase();
