@@ -214,8 +214,7 @@ class _CcidNfcFTransport implements NfcFTransport {
 
   @override
   Future<Uint8List> transceive(Uint8List felicaFrame) async {
-    final framed =
-        Uint8List.fromList([felicaFrame.length + 1, ...felicaFrame]);
+    final framed = Uint8List.fromList([felicaFrame.length + 1, ...felicaFrame]);
     final payload = Uint8List.fromList([0xD4, 0x40, 0x01, ...framed]);
 
     final response = await transceiveEscape(card, payload);

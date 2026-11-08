@@ -65,5 +65,6 @@ abstract class NfcHubPlatform extends PlatformInterface {
   /// A no-op by default rather than a throw: a platform with no native half to
   /// configure (PC/SC) and a test fake should both be able to ignore this
   /// without breaking [NfcHub.setLogging].
-  Future<void> setLogging({required bool enabled, required bool verbose}) async {}
+  Future<void> setLogging(
+      {required bool enabled, required bool verbose}) async {}
 }

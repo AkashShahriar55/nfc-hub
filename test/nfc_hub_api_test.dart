@@ -400,8 +400,7 @@ void main() {
 
     test(
         'with a timeout: throws TimeoutException AND stops BOTH sources '
-        '(no leaked reader mode / poll loop) when nothing arrives',
-        () async {
+        '(no leaked reader mode / poll loop) when nothing arrives', () async {
       final manager = _FakeAndroidNfcManager();
       final platform = _FakePlatform()..readers = ['reader-1'];
       final hub = NfcHub(
@@ -558,7 +557,8 @@ void main() {
       await sub.cancel();
     });
 
-    test('reflects CcidSource.readerStates() -- a reader with a card shows '
+    test(
+        'reflects CcidSource.readerStates() -- a reader with a card shows '
         'ExternalReaderState(name, true)', () {
       FakeAsync().run((async) {
         final manager = _FakeAndroidNfcManager();

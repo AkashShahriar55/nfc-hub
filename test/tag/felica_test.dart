@@ -19,7 +19,8 @@ class _FakeNfcFTransport implements NfcFTransport {
   final Map<String, Uint8List> responses;
   final List<Uint8List> requestedFrames = [];
 
-  _FakeNfcFTransport(this._idm, {Uint8List? pmm, Map<String, Uint8List> responses = const {}})
+  _FakeNfcFTransport(this._idm,
+      {Uint8List? pmm, Map<String, Uint8List> responses = const {}})
       : _pmm = pmm,
         responses = responses.map((k, v) => MapEntry(k.toLowerCase(), v));
 
@@ -63,8 +64,8 @@ void main() {
 
   test('pmm returns the transport-supplied PMm', () async {
     const pmmHex = '0135428282468CFF';
-    final transport =
-        _FakeNfcFTransport(idmBytes, pmm: Uint8List.fromList(hex.decode(pmmHex)));
+    final transport = _FakeNfcFTransport(idmBytes,
+        pmm: Uint8List.fromList(hex.decode(pmmHex)));
     final tag = FelicaTag(transport);
 
     final pmm = await tag.pmm;
@@ -102,8 +103,7 @@ void main() {
     );
   });
 
-  test(
-      'readWithoutEncryption() throws when the response frame is too short',
+  test('readWithoutEncryption() throws when the response frame is too short',
       () async {
     const readFrameHex = '06${idmHex}010F22018000';
     // Fewer than 12 bytes -- violates the response.length < 12 guard.

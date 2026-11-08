@@ -102,15 +102,16 @@ class AndroidNfcManager {
     @visibleForTesting EventChannel? eventChannel,
   })  : _method = methodChannel ?? const MethodChannel('nfc_hub'),
         _event = eventChannel ?? const EventChannel('nfc_hub/events') {
-    _sub = _event.receiveBroadcastStream().listen(_onEvent, onError: _onEventError);
+    _sub = _event
+        .receiveBroadcastStream()
+        .listen(_onEvent, onError: _onEventError);
   }
 
   final MethodChannel _method;
   final EventChannel _event;
   late final StreamSubscription<Object?> _sub;
 
-  final _discoveriesController =
-      StreamController<NfcTagDiscovery>.broadcast();
+  final _discoveriesController = StreamController<NfcTagDiscovery>.broadcast();
   final _nfcStateChangesController = StreamController<NfcState>.broadcast();
 
   /// Tags discovered by the phone's NFC antenna.
@@ -184,8 +185,7 @@ class AndroidNfcManager {
   /// Reads a single MIFARE Classic block after authentication.
   Future<Uint8List> mifareReadBlock(int handle, int block) async {
     // See transceive() above for why this is Object? rather than Uint8List.
-    final result =
-        await _method.invokeMethod<Object?>('nfcMifareReadBlock', {
+    final result = await _method.invokeMethod<Object?>('nfcMifareReadBlock', {
       'handle': handle,
       'block': block,
     });

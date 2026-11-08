@@ -163,8 +163,8 @@ class _HarnessHomeState extends State<HarnessHome> {
                   itemBuilder: (context, index) {
                     final entry = _entries[index];
                     final info = entry.info;
-                    final title = info?.technology ??
-                        entry.driver.runtimeType.toString();
+                    final title =
+                        info?.technology ?? entry.driver.runtimeType.toString();
                     final uidHex =
                         info != null ? _hex(info.uid) : '(unavailable)';
                     final reading = entry.readout == null;
@@ -181,8 +181,7 @@ class _HarnessHomeState extends State<HarnessHome> {
                           ? const SizedBox(
                               width: 18,
                               height: 18,
-                              child:
-                                  CircularProgressIndicator(strokeWidth: 2))
+                              child: CircularProgressIndicator(strokeWidth: 2))
                           : const Icon(Icons.chevron_right),
                       // Not tappable until the eager read has cached the data.
                       onTap: reading ? null : () => _openDetail(entry),

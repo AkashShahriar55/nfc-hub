@@ -35,8 +35,7 @@ void main() {
       // Full response: D5 4B (InListPassiveTarget) 01 (NbTg) 01 (Tg)
       // 00 44 (ATQA) 08 (SAK) 07 (UID length) 04 01 02 03 04 05 06 (UID).
       NfcHubPlatform.instance = _FakeCcidPlatform({
-        'FF00000004D44A0100':
-            'D54B01010044080704010203040506' '9000',
+        'FF00000004D44A0100': 'D54B01010044080704010203040506' '9000',
       });
       final card = CcidCard('fake-reader');
 

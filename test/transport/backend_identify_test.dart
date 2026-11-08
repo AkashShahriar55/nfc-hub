@@ -30,9 +30,11 @@ class _FakeMifareClassicTransport implements MifareClassicTransport {
 
 class _FakeNfcFTransport implements NfcFTransport {
   @override
-  Future<Uint8List> get idm async => Uint8List.fromList([1, 2, 3, 4, 5, 6, 7, 8]);
+  Future<Uint8List> get idm async =>
+      Uint8List.fromList([1, 2, 3, 4, 5, 6, 7, 8]);
   @override
-  Future<Uint8List> get pmm async => Uint8List.fromList([0, 1, 2, 3, 4, 5, 6, 7]);
+  Future<Uint8List> get pmm async =>
+      Uint8List.fromList([0, 1, 2, 3, 4, 5, 6, 7]);
   @override
   Future<Uint8List> transceive(Uint8List felicaFrame) async => Uint8List(0);
 }
@@ -86,8 +88,8 @@ class _FakeBackendNoTypeB implements TransportBackend {
 
 void main() {
   test('hint type2 -> Type2Tag, no probing', () async {
-    final driver = await identifyFromBackend(_FakeBackend(),
-        hint: TagTechHint.type2);
+    final driver =
+        await identifyFromBackend(_FakeBackend(), hint: TagTechHint.type2);
     expect(driver, isA<Type2Tag>());
   });
 
@@ -98,20 +100,20 @@ void main() {
   });
 
   test('hint felica -> FelicaTag', () async {
-    final driver = await identifyFromBackend(_FakeBackend(),
-        hint: TagTechHint.felica);
+    final driver =
+        await identifyFromBackend(_FakeBackend(), hint: TagTechHint.felica);
     expect(driver, isA<FelicaTag>());
   });
 
   test('hint isoDep -> IsoDepTag', () async {
-    final driver = await identifyFromBackend(_FakeBackend(),
-        hint: TagTechHint.isoDep);
+    final driver =
+        await identifyFromBackend(_FakeBackend(), hint: TagTechHint.isoDep);
     expect(driver, isA<IsoDepTag>());
   });
 
   test('hint typeB -> TypeBTag', () async {
-    final driver = await identifyFromBackend(_FakeBackend(),
-        hint: TagTechHint.typeB);
+    final driver =
+        await identifyFromBackend(_FakeBackend(), hint: TagTechHint.typeB);
     expect(driver, isA<TypeBTag>());
   });
 

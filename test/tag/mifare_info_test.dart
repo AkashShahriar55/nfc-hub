@@ -16,16 +16,14 @@ void main() {
     });
 
     test('identifies Ultralight/NTAG family (0x00)', () {
-      expect(mifareFamilyFromSak(0x00),
-          equals(MifareFamily.ultralightOrNtag));
+      expect(mifareFamilyFromSak(0x00), equals(MifareFamily.ultralightOrNtag));
     });
 
-    test('identifies DESFire/Plus-SL3 via the 0x20 ISO14443-4 bit, even '
+    test(
+        'identifies DESFire/Plus-SL3 via the 0x20 ISO14443-4 bit, even '
         'combined with other bits', () {
-      expect(mifareFamilyFromSak(0x20),
-          equals(MifareFamily.desfireOrPlusSl3));
-      expect(mifareFamilyFromSak(0x24),
-          equals(MifareFamily.desfireOrPlusSl3));
+      expect(mifareFamilyFromSak(0x20), equals(MifareFamily.desfireOrPlusSl3));
+      expect(mifareFamilyFromSak(0x24), equals(MifareFamily.desfireOrPlusSl3));
     });
 
     test('returns unknown for an unrecognized SAK', () {

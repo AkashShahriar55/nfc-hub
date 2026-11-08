@@ -54,7 +54,8 @@ class _FakeMifareClassicTransport implements MifareClassicTransport {
 }
 
 void main() {
-  test('authenticateWithDefaultKeys() succeeds on the first working default key',
+  test(
+      'authenticateWithDefaultKeys() succeeds on the first working default key',
       () async {
     final transport = _FakeMifareClassicTransport();
     final tag = MifareClassicTag(transport);
@@ -68,7 +69,8 @@ void main() {
         equals('FFFFFFFFFFFF'));
   });
 
-  test('authenticateWithDefaultKeys() throws MifareAuthException when every '
+  test(
+      'authenticateWithDefaultKeys() throws MifareAuthException when every '
       'default key fails', () async {
     final transport = _FakeMifareClassicTransport(rejectedKeyHex: {
       'FFFFFFFFFFFF',

@@ -30,8 +30,7 @@ class ExternalReaderState {
   int get hashCode => Object.hash(name, cardPresent);
 
   @override
-  String toString() =>
-      'ExternalReaderState($name, cardPresent: $cardPresent)';
+  String toString() => 'ExternalReaderState($name, cardPresent: $cardPresent)';
 }
 
 /// Whether a tracked reader currently has no card seated ([empty]), or has
@@ -391,8 +390,7 @@ class CcidSource implements TagSource {
     var changed = false;
 
     // Drop tracking for readers that vanished (unplugged) since last tick.
-    final vanished =
-        _status.keys.where((r) => !readerSet.contains(r)).toList();
+    final vanished = _status.keys.where((r) => !readerSet.contains(r)).toList();
     for (final reader in vanished) {
       final wasOccupied = _status[reader] == _ReaderStatus.occupied;
       nfcLog('reader "$reader": VANISHED from listReaders (was '
@@ -542,7 +540,8 @@ class CcidSource implements TagSource {
           : await card.transceive(_probeApdu);
     } catch (error) {
       // Nothing answers the probe -- the card was removed.
-      nfcLog('reader "$reader": liveness probe failed ($error) -- card removed');
+      nfcLog(
+          'reader "$reader": liveness probe failed ($error) -- card removed');
       await _markCardGone(reader);
       return false;
     }

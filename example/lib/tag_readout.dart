@@ -29,8 +29,7 @@ class TagReadout {
     this.results = const [],
   });
 
-  String get technology =>
-      info?.technology ?? driver.runtimeType.toString();
+  String get technology => info?.technology ?? driver.runtimeType.toString();
 }
 
 /// Reads the [TagInfo] plus every family-specific datum for [driver] right
@@ -72,8 +71,8 @@ Future<TagReadout> readEverything(
       final records = await driver.readNdef();
       return records.isEmpty ? '(empty message)' : records.join('\n');
     });
-    await run('Memory Dump',
-        () async => _formatPages(await driver.readMemoryDump()));
+    await run(
+        'Memory Dump', () async => _formatPages(await driver.readMemoryDump()));
     await run('Chip Version', () async {
       final v = await driver.readChipVersion();
       return v?.toString() ??
@@ -128,8 +127,8 @@ List<String> tagInfoLines(TagInfo info) {
   ];
   if (info is FelicaInfo) {
     if (info.modelName != null) {
-      lines.add(
-          'Chip model: ${info.modelName} (unofficial, community-sourced)');
+      lines
+          .add('Chip model: ${info.modelName} (unofficial, community-sourced)');
     }
     if (info.systemCodes.isNotEmpty) {
       final codes = info.systemCodes.map((c) {

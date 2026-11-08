@@ -59,45 +59,46 @@ void main() {
 
   group('ultralightModelName', () {
     test('identifies NTAG213 from its exact GET_VERSION bytes', () {
-      final version = ChipVersion.parse(Uint8List.fromList(
-          [0x00, 0x04, 0x04, 0x02, 0x01, 0x00, 0x0F, 0x03]));
+      final version = ChipVersion.parse(
+          Uint8List.fromList([0x00, 0x04, 0x04, 0x02, 0x01, 0x00, 0x0F, 0x03]));
 
       expect(ultralightModelName(version), equals('NTAG 213'));
     });
 
     test('identifies NTAG215', () {
-      final version = ChipVersion.parse(Uint8List.fromList(
-          [0x00, 0x04, 0x04, 0x02, 0x01, 0x00, 0x11, 0x03]));
+      final version = ChipVersion.parse(
+          Uint8List.fromList([0x00, 0x04, 0x04, 0x02, 0x01, 0x00, 0x11, 0x03]));
 
       expect(ultralightModelName(version), equals('NTAG 215'));
     });
 
     test('identifies NTAG216', () {
-      final version = ChipVersion.parse(Uint8List.fromList(
-          [0x00, 0x04, 0x04, 0x02, 0x01, 0x00, 0x13, 0x03]));
+      final version = ChipVersion.parse(
+          Uint8List.fromList([0x00, 0x04, 0x04, 0x02, 0x01, 0x00, 0x13, 0x03]));
 
       expect(ultralightModelName(version), equals('NTAG 216'));
     });
 
     test('identifies the original MIFARE Ultralight', () {
-      final version = ChipVersion.parse(Uint8List.fromList(
-          [0x00, 0x04, 0x03, 0x01, 0x00, 0x00, 0x0B, 0x03]));
+      final version = ChipVersion.parse(
+          Uint8List.fromList([0x00, 0x04, 0x03, 0x01, 0x00, 0x00, 0x0B, 0x03]));
 
       expect(ultralightModelName(version), equals('MIFARE Ultralight'));
     });
 
-    test('falls back to a coarse NTAG family label for an unrecognized '
+    test(
+        'falls back to a coarse NTAG family label for an unrecognized '
         'exact tuple', () {
-      final version = ChipVersion.parse(Uint8List.fromList(
-          [0x00, 0x04, 0x04, 0xFF, 0x01, 0x00, 0x0F, 0x03]));
+      final version = ChipVersion.parse(
+          Uint8List.fromList([0x00, 0x04, 0x04, 0xFF, 0x01, 0x00, 0x0F, 0x03]));
 
       expect(ultralightModelName(version),
           equals('NTAG family (unrecognized exact model)'));
     });
 
     test('returns null for a non-NXP vendor ID', () {
-      final version = ChipVersion.parse(Uint8List.fromList(
-          [0x00, 0x99, 0x04, 0x02, 0x01, 0x00, 0x0F, 0x03]));
+      final version = ChipVersion.parse(
+          Uint8List.fromList([0x00, 0x99, 0x04, 0x02, 0x01, 0x00, 0x0F, 0x03]));
 
       expect(ultralightModelName(version), isNull);
     });

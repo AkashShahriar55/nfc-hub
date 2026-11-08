@@ -98,8 +98,8 @@ void main() {
     expect(args['handle'], 3);
     expect(args['sector'], 2);
     expect(args['keyA'], true);
-    expect(args['key'],
-        Uint8List.fromList([0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]));
+    expect(
+        args['key'], Uint8List.fromList([0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]));
   });
 
   test('mifareReadBlock forwards handle/block and returns the block bytes',
@@ -114,8 +114,7 @@ void main() {
     expect(args['block'], 8);
   });
 
-  test(
-      'mifareReadBlock normalizes a List<int> response into a Uint8List',
+  test('mifareReadBlock normalizes a List<int> response into a Uint8List',
       () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(method, (call) async {
@@ -134,8 +133,8 @@ void main() {
     addTearDown(m.dispose);
     await m.startReaderMode();
     await m.stopReaderMode();
-    expect(log.map((c) => c.method),
-        ['nfcStartReaderMode', 'nfcStopReaderMode']);
+    expect(
+        log.map((c) => c.method), ['nfcStartReaderMode', 'nfcStopReaderMode']);
   });
 
   test('openNfcSettings calls the expected method', () async {

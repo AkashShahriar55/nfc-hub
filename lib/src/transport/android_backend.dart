@@ -79,14 +79,14 @@ class _AndroidType2Transport implements Type2Transport {
 
   @override
   Future<Uint8List> readCapabilityContainer() async {
-    final data =
-        await _transceive(manager, handle, 'NfcA', Uint8List.fromList([0x30, 0x03]));
+    final data = await _transceive(
+        manager, handle, 'NfcA', Uint8List.fromList([0x30, 0x03]));
     return Uint8List.sublistView(data, 0, 4);
   }
 
   @override
-  Future<Uint8List> readPages(int startPage) =>
-      _transceive(manager, handle, 'NfcA', Uint8List.fromList([0x30, startPage]));
+  Future<Uint8List> readPages(int startPage) => _transceive(
+      manager, handle, 'NfcA', Uint8List.fromList([0x30, startPage]));
 
   /// Never throws: an unsupported/failed GET_VERSION (older Ultralight,
   /// tag lost mid-read, anything else) collapses to null, matching
@@ -172,8 +172,7 @@ class _AndroidNfcFTransport implements NfcFTransport {
   /// wrapping here, that dialect is CCID-only.
   @override
   Future<Uint8List> transceive(Uint8List felicaFrame) async {
-    final framed =
-        Uint8List.fromList([felicaFrame.length + 1, ...felicaFrame]);
+    final framed = Uint8List.fromList([felicaFrame.length + 1, ...felicaFrame]);
     return _transceive(manager, handle, 'NfcF', framed);
   }
 }

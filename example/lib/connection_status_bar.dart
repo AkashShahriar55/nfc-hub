@@ -75,7 +75,8 @@ class _ConnectionStatusBarState extends State<ConnectionStatusBar> {
     }
     if (state.builtInNfcAvailable) {
       return Chip(
-        avatar: Icon(Icons.check_circle, color: theme.colorScheme.primary, size: 18),
+        avatar: Icon(Icons.check_circle,
+            color: theme.colorScheme.primary, size: 18),
         label: const Text('NFC ready'),
       );
     }
@@ -97,7 +98,9 @@ class _ConnectionStatusBarState extends State<ConnectionStatusBar> {
       avatar: Icon(
         reader.cardPresent ? Icons.circle : Icons.circle_outlined,
         size: 14,
-        color: reader.cardPresent ? theme.colorScheme.primary : theme.disabledColor,
+        color: reader.cardPresent
+            ? theme.colorScheme.primary
+            : theme.disabledColor,
       ),
       label: Text(reader.name),
     );

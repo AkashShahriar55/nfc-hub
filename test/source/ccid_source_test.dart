@@ -162,7 +162,8 @@ void main() {
       });
     });
 
-    test('a card that stays put across several ticks emits exactly once '
+    test(
+        'a card that stays put across several ticks emits exactly once '
         '(dedup)', () {
       FakeAsync().run((async) {
         final platform = _FakePlatform()
@@ -269,7 +270,8 @@ void main() {
       });
     });
 
-    test('a connect() that throws (empty reader, no card) does not emit or '
+    test(
+        'a connect() that throws (empty reader, no card) does not emit or '
         'crash, and the next tick still polls', () {
       FakeAsync().run((async) {
         final platform = _FakePlatform()..readers = ['reader-1'];
@@ -757,8 +759,7 @@ void main() {
         // awaiting the same still-incomplete `hold`.
         async.elapse(const Duration(milliseconds: 1600));
         expect(platform.callCount, 1,
-            reason:
-                'only the first tick ever entered listReaders() -- the '
+            reason: 'only the first tick ever entered listReaders() -- the '
                 'guard must have skipped every overlapping tick attempt '
                 'before it got this far');
         expect(platform.connectLog, isEmpty);
@@ -883,21 +884,22 @@ void main() {
     // FakeAsync (a FakeAsync/Stream.multi interaction quirk -- verified in
     // isolation that the same forwarding completes correctly under real
     // async). The production dispose() path this guards runs in real async.
-    test('dispose() completes tags() and taggedTags() for existing '
+    test(
+        'dispose() completes tags() and taggedTags() for existing '
         'listeners (an await-for over tags() must end, not hang forever)',
         () async {
       final platform = _FakePlatform()
         ..readers = ['reader-1']
         ..cardsPresent.add('reader-1');
-      final source = CcidSource(platform, pollInterval: const Duration(milliseconds: 10));
+      final source =
+          CcidSource(platform, pollInterval: const Duration(milliseconds: 10));
 
       var tagsDone = false;
       var taggedDone = false;
       final tagsSub =
           source.tags().listen((_) {}, onDone: () => tagsDone = true);
-      final taggedSub = source
-          .taggedTags()
-          .listen((_) {}, onDone: () => taggedDone = true);
+      final taggedSub =
+          source.taggedTags().listen((_) {}, onDone: () => taggedDone = true);
 
       // Let the poll loop run a few ticks so the card is seated/occupied.
       await Future<void>.delayed(const Duration(milliseconds: 60));

@@ -109,8 +109,7 @@ void main() {
         'mifareClassic() never throws, so there is no reason to fall '
         'through to capability probing, and probing would risk grabbing '
         'the card under the wrong family entirely, see the misidentified-'
-        'as-ISO-DEP regression covered in integration_test.dart)',
-        () async {
+        'as-ISO-DEP regression covered in integration_test.dart)', () async {
       final atr = Uint8List.fromList([
         0x3B, 0x8F, 0x80, 0x01, //
         0x80, 0x4F, 0x0C, 0xA0, 0x00, 0x00, 0x03, 0x06, 0x03, 0x00, 0x01,
@@ -345,12 +344,12 @@ void main() {
       }
     });
 
-    test('recognizes a Type B card via the PN532 poll when nothing else '
+    test(
+        'recognizes a Type B card via the PN532 poll when nothing else '
         'matches', () async {
       NfcHubPlatform.instance = _FakeCcidPlatform({
         'FFCA000000': null,
-        'FF00000004D44A0103':
-            'D54B' '01' '01' '${'11' * 12}' '00' '9000',
+        'FF00000004D44A0103': 'D54B' '01' '01' '${'11' * 12}' '00' '9000',
       });
       final card = CcidCard('fake-reader');
 

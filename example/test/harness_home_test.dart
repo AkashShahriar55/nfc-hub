@@ -130,8 +130,7 @@ void main() {
       connectionState: statesController.stream,
     )));
 
-    tagsController
-        .addError(const UnrecognizedTagException('unsupported tech'));
+    tagsController.addError(const UnrecognizedTagException('unsupported tech'));
     await tester.pump(); // deliver the error
     await tester.pump(); // let the SnackBar animate in
 

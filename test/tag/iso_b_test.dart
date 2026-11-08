@@ -25,8 +25,7 @@ class _FakeNfcBTransport implements NfcBTransport {
 }
 
 void main() {
-  test('transceive() passes the APDU straight through to the card',
-      () async {
+  test('transceive() passes the APDU straight through to the card', () async {
     final tag = TypeBTag(_FakeNfcBTransport(
       Uint8List(12),
       Uint8List(4),
@@ -46,8 +45,8 @@ void main() {
   });
 
   test('readTagInfo() extracts the PUPI from ATQB', () async {
-    final atqb = Uint8List.fromList(
-        [0x50, 0x11, 0x22, 0x33, 0x44, 0, 0, 0, 0, 0, 0, 0]);
+    final atqb =
+        Uint8List.fromList([0x50, 0x11, 0x22, 0x33, 0x44, 0, 0, 0, 0, 0, 0, 0]);
     final pupi = Uint8List.fromList([0x11, 0x22, 0x33, 0x44]);
     final tag = TypeBTag(_FakeNfcBTransport(atqb, pupi));
 

@@ -60,7 +60,8 @@ class _SequencedFakeIsoDepTransport implements IsoDepTransport {
 }
 
 void main() {
-  test('selectApplication() sends a SELECT-by-name APDU with the AID as Lc/data',
+  test(
+      'selectApplication() sends a SELECT-by-name APDU with the AID as Lc/data',
       () async {
     // AID 'D2760000850101' is 7 bytes (14 hex chars), so Lc = 07.
     final fake = _FakeIsoDepTransport({'00A4040007D2760000850101': '9000'});
@@ -86,7 +87,8 @@ void main() {
   });
 
   group('readDesfireVersion', () {
-    test('parses the 3-frame GetVersion exchange (real example from ACS '
+    test(
+        'parses the 3-frame GetVersion exchange (real example from ACS '
         'ACR122U API documentation)', () async {
       final fake = _SequencedFakeIsoDepTransport([
         'AF04010100021805',

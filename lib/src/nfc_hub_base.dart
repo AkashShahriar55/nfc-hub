@@ -223,8 +223,8 @@ class CcidCard {
     final completer = Completer<String?>();
     _chain = _chain.then((_) async {
       try {
-        completer.complete(
-            await NfcHubPlatform.instance.transceive(reader, capdu));
+        completer
+            .complete(await NfcHubPlatform.instance.transceive(reader, capdu));
       } catch (e, st) {
         completer.completeError(e, st);
       } finally {

@@ -287,8 +287,7 @@ void main() {
       // numBlocks=01 | blockListElement(80,00) -> 15 bytes, length-prefixed
       // to 16 bytes (leading byte 0x10), wrapped in D4 40 01 (PN532
       // InDataExchange, target #1) -> 19-byte payload -> Lc=13.
-      const readCapdu =
-          'FF00000013D440011006AABBCCDDEE001122010F22018000';
+      const readCapdu = 'FF00000013D440011006AABBCCDDEE001122010F22018000';
       // Response: D5 41 00 (InDataExchange success) + FeliCa response frame
       // (29 bytes): len=1D, respCode=07, idm(8), SF1=00, SF2=00,
       // numBlocks=01, block(16 bytes of 0xAA).
@@ -338,7 +337,18 @@ void main() {
       // the UID (InListPassiveTarget): numTargets=01, Tg=01, ATQA=0344,
       // SAK=20 (ISO14443-4 compliant), UID=04112233.
       final pollBytes = [
-        0xD5, 0x4B, 0x01, 0x01, 0x03, 0x44, 0x20, 0x04, 0x04, 0x11, 0x22, 0x33,
+        0xD5,
+        0x4B,
+        0x01,
+        0x01,
+        0x03,
+        0x44,
+        0x20,
+        0x04,
+        0x04,
+        0x11,
+        0x22,
+        0x33,
       ];
       final pollResponse = '${hex.encode(pollBytes)}9000';
 
@@ -461,7 +471,8 @@ void main() {
     // families (four restored here, plus IsoDepTag's pre-existing path via
     // transport.historicalBytes for completeness).
 
-    test('Type2Tag: readTagInfo().atr matches the ATR identifyTag() '
+    test(
+        'Type2Tag: readTagInfo().atr matches the ATR identifyTag() '
         'resolved it from', () async {
       // Same Type 2-shaped ATR as detection_test.dart's ATR-fast-path case.
       final atr = Uint8List.fromList([
@@ -482,7 +493,8 @@ void main() {
       expect(info.atr, equals(atr));
     });
 
-    test('MifareClassicTag: readTagInfo().atr matches the ATR identifyTag() '
+    test(
+        'MifareClassicTag: readTagInfo().atr matches the ATR identifyTag() '
         'resolved it from', () async {
       // Same MIFARE Classic 1K-shaped ATR as detection_test.dart's
       // ATR-fast-path case.
