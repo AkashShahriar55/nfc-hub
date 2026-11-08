@@ -21,6 +21,9 @@ import 'tag/tag_driver.dart';
 /// The constructor parameters below exist purely so tests can substitute
 /// fakes for them; production callers should just use `NfcHub()`.
 class NfcHub {
+  /// Creates a hub. Apps normally call this with no arguments.
+  ///
+  /// The optional parameters replace the underlying sources in tests.
   NfcHub({
     @visibleForTesting AndroidNfcManager? androidNfcManager,
     @visibleForTesting AndroidNfcSource? androidNfcSource,
@@ -184,7 +187,12 @@ class NfcHub {
   }
 }
 
+/// A connection to a card seated in a CCID/PC-SC reader.
+///
+/// Returned by [NfcHub.connect] for direct APDU exchange. Most apps use
+/// [NfcHub.tagStream] or [NfcHubReader] instead.
 class ReaderCard {
+  /// The name of the reader holding this card.
   final String reader;
 
   /// The card's answer-to-reset, captured at connect time where the
@@ -193,6 +201,7 @@ class ReaderCard {
   /// probing in that case.
   final Uint8List? atr;
 
+  /// Creates a connection handle for the card in [reader].
   ReaderCard(this.reader, {this.atr});
 
   /// Clock used to stamp [lastActivity]. Overridable (by [CcidSource], right

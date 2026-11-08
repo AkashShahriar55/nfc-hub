@@ -18,6 +18,7 @@ class ExternalReaderState {
   /// Whether a card is currently seated in this reader.
   final bool cardPresent;
 
+  /// Creates a state for the reader called [name].
   const ExternalReaderState(this.name, this.cardPresent);
 
   @override

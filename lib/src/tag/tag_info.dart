@@ -16,6 +16,7 @@ class CapabilityContainer {
   /// The raw read/write access byte (high nibble = read, low nibble = write).
   final int accessByte;
 
+  /// Creates a container from its raw bytes.
   CapabilityContainer({
     required this.magicByte,
     required this.version,
@@ -63,17 +64,33 @@ class CapabilityContainer {
 /// the chip model of an NTAG21x / Mifare Ultralight family tag.
 ///
 /// This is a manufacturer-specific command, not part of the standard NFC
-/// Forum Type 2 Tag operation set — see `ReaderCard.readChipVersion`.
+/// Forum Type 2 Tag operation set — see `Type2Tag.readChipVersion`.
 class ChipVersion {
+  /// The fixed header byte of the response.
   final int headerByte;
+
+  /// The vendor ID. NXP is `0x04`.
   final int vendorId;
+
+  /// The product type.
   final int productType;
+
+  /// The product subtype.
   final int productSubtype;
+
+  /// The major product version.
   final int majorVersion;
+
+  /// The minor product version.
   final int minorVersion;
+
+  /// The encoded storage size.
   final int storageSize;
+
+  /// The protocol type.
   final int protocolType;
 
+  /// Creates a version record from its decoded fields.
   ChipVersion({
     required this.headerByte,
     required this.vendorId,

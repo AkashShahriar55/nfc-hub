@@ -6,6 +6,7 @@ import 'desfire_info.dart';
 import 'tag_driver.dart';
 import '../transport/transport.dart';
 
+/// Identification details for an ISO-DEP tag.
 class IsoDepInfo implements TagInfo {
   @override
   final String technology;
@@ -13,8 +14,11 @@ class IsoDepInfo implements TagInfo {
   final Uint8List uid;
   @override
   final Uint8List? atr;
+
+  /// DESFire version details, or null if the card is not a DESFire.
   final DesfireVersion? desfireVersion;
 
+  /// Creates an info record from its decoded fields.
   const IsoDepInfo({
     required this.technology,
     required this.uid,
@@ -30,8 +34,12 @@ class IsoDepInfo implements TagInfo {
 /// This driver only provides raw ISO 7816-4 SELECT + APDU transport; it has
 /// no knowledge of any particular card's application/file model.
 class IsoDepTag extends TagDriver {
+  /// The transport used to reach this tag.
   final IsoDepTransport transport;
 
+  /// Creates a driver over [transport].
+  ///
+  /// Apps receive drivers from nfc_hub rather than constructing them.
   const IsoDepTag(this.transport);
 
   /// Sends a SELECT (by name/AID) command for [aidHex] (hex-encoded
@@ -42,7 +50,7 @@ class IsoDepTag extends TagDriver {
   }
 
   /// Sends a raw APDU [capdu] (hex-encoded) and returns the response APDU
-  /// (hex-encoded), unchanged from [transport.transceive].
+  /// (hex-encoded), unchanged from [IsoDepTransport.transceive].
   Future<String?> transceive(String capdu) async {
     final response =
         await transport.transceive(Uint8List.fromList(hex.decode(capdu)));

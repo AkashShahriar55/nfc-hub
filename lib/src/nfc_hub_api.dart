@@ -61,6 +61,7 @@ enum NfcUnavailableReason {
 /// presence of every attached CCID/PC-SC reader.
 @immutable
 class NfcConnectionState {
+  /// Creates a snapshot of the connection state.
   const NfcConnectionState({
     required this.builtInNfcAvailable,
     required this.builtInNfcReason,

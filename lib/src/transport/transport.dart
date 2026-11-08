@@ -17,8 +17,10 @@ import '../tag/mifare_classic.dart' show MifareKeyType;
 /// will therefore see it on Android but never on CCID. Unifying the two
 /// backends' error contracts is future work, not done here.
 class TagLostException implements Exception {
+  /// A description of the failure.
   final String message;
 
+  /// Creates an exception with [message].
   const TagLostException(this.message);
 
   @override
@@ -57,8 +59,13 @@ abstract class Type2Transport {
 /// stream, and on CCID the reader runs the cipher itself via the `FF82`
 /// Load Key / `FF86` General Authenticate pseudo-APDUs.
 abstract class MifareClassicTransport {
+  /// The tag's unique identifier.
   Uint8List get uid;
+
+  /// The tag's ATQA bytes.
   Uint8List get atqa;
+
+  /// The tag's SAK byte.
   int get sak;
 
   /// Authenticates [sector] with [key] as key [type].
@@ -141,5 +148,6 @@ abstract class NfcBTransport {
   /// The 12-byte ATQB: `'50' | PUPI(4) | AppData(4) | ProtocolInfo(3)`.
   Uint8List get atqb;
 
+  /// Sends [apdu] and returns the card's response.
   Future<Uint8List> transceive(Uint8List apdu);
 }

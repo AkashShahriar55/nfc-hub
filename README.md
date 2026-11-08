@@ -292,6 +292,12 @@ is an unsupported family. Check the exception passed to `onError`, then turn on
 The [`example/`](example/) app is a full test harness with auto-detection, live
 status for both sources, and per-family reads.
 
+## Documentation
+
+- [API reference](https://pub.dev/documentation/nfc_hub/latest/)
+- [Migrating to 0.8](doc/migrating-to-0.8.md)
+- [Changelog](CHANGELOG.md)
+
 ## Contributing
 
 Bug reports and pull requests are welcome. See

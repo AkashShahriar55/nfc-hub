@@ -6,10 +6,16 @@ import '../transport/transport.dart';
 
 /// The parsed result of a FeliCa "Read Without Encryption" command.
 class FelicaReadResult {
+  /// The card's first status flag. Zero means success.
   final int statusFlag1;
+
+  /// The card's second status flag, which details any failure.
   final int statusFlag2;
+
+  /// The 16-byte blocks that were read, in request order.
   final List<Uint8List> blocks;
 
+  /// Creates a result from its decoded fields.
   const FelicaReadResult({
     required this.statusFlag1,
     required this.statusFlag2,
@@ -20,6 +26,9 @@ class FelicaReadResult {
   bool get isSuccess => statusFlag1 == 0x00 && statusFlag2 == 0x00;
 }
 
+/// Identification details for a FeliCa tag.
+///
+/// For these tags, [uid] holds the IDm.
 class FelicaInfo implements TagInfo {
   @override
   final String technology;
@@ -27,10 +36,17 @@ class FelicaInfo implements TagInfo {
   final Uint8List uid; // IDm
   @override
   final Uint8List? atr;
+
+  /// The card's manufacture parameter (PMm).
   final Uint8List pmm;
+
+  /// The chip model derived from [pmm], or null if it is not recognized.
   final String? modelName;
+
+  /// The system codes the card reports.
   final List<int> systemCodes;
 
+  /// Creates an info record from its decoded fields.
   const FelicaInfo({
     required this.technology,
     required this.uid,
@@ -48,12 +64,16 @@ class FelicaInfo implements TagInfo {
 /// whatever reader-specific dialect getting them to the card requires (on
 /// CCID, the PN532 InDataExchange escape wrapping).
 class FelicaTag extends TagDriver {
+  /// The transport used to reach this tag.
   final NfcFTransport transport;
 
   /// The card's ATR, where the source supplies one. Null on sources that
   /// have no ATR concept (the device's built-in NFC antenna).
   final Uint8List? atr;
 
+  /// Creates a driver over [transport].
+  ///
+  /// Apps receive drivers from nfc_hub rather than constructing them.
   const FelicaTag(this.transport, {this.atr});
 
   /// The card's 8-byte IDm.

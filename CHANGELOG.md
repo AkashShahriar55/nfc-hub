@@ -2,6 +2,8 @@
 
 First release on pub.dev.
 
+See the [migration guide](doc/migrating-to-0.8.md) for upgrade steps.
+
 - **Breaking:** `CcidSourceFilter` is now `NfcSource`, and
   `CcidSourceFilter.builtInNfc()` is now `NfcSource.builtIn()`.
 - **Breaking:** `CcidConnectionState` is now `NfcConnectionState`.
